@@ -1,6 +1,6 @@
-"""Gemini Live ↔ LiveKit audio bridge for Solution 4 (Aura).
+"""Gemini Live ↔ LiveKit audio bridge for Aura SDE Interview Agent.
 
-Architecture (ADK + google-genai, no Pipecat):
+Architecture (ADK + google-genai):
 
   Browser mic → LiveKit room (WebRTC)
     → rtc.AudioStream → PCM16 @ 16 kHz

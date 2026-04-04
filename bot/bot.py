@@ -1,6 +1,6 @@
-"""Solution 4 — Aura backend entrypoint.
+"""Aura SDE Interview Agent — backend entrypoint.
 
-Stack: Google ADK + Gemini Live + Vertex AI + LiveKit (no Pipecat, no Azure).
+Stack: Google ADK + Gemini Live + Vertex AI + LiveKit.
 
 Bootstrap flow:
   POST /livekit/session

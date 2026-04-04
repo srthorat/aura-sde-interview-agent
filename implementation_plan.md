@@ -1,23 +1,6 @@
 # Implementation Plan: Aura — SDE Interview Agent
 
-Aura is a high-fidelity AI SDE interview coach. It hears your voice with human-like turn detection, conducts structured Google-style interviews, and provides real-time feedback with sub-second latency.
-
----
-
-## ✅ Challenge Compliance Checklist
-
-| Requirement | Solution |
-|---|---|
-| Gemini model | `gemini-live-2.5-flash-native-audio` via Google ADK |
-| Google GenAI SDK or ADK | **Google ADK** (Agent Development Kit) |
-| Google Cloud hosting | **Cloud Run** (backend), **Cloud Build** (CI/CD), **Vertex AI** (sessions + memory) |
-| Multimodal I/O | Audio in + audio out |
-| Public repo + README | ✓ |
-| Architecture diagram | Phase 4 |
-| Cloud deployment proof | Phase 3 (Terraform + Cloud Build logs) |
-
-### Bonus Points
-1. **Automated deployment** — Terraform + `infra/deploy.sh` (IaC in public repo)
+Aura is a real-time AI-powered SDE interview coach. It hears your voice with human-like turn detection, conducts structured Google-style interviews across four rounds, and provides live spoken feedback — all backed by persistent per-candidate session memory.
 
 ---
 
@@ -25,16 +8,23 @@ Aura is a high-fidelity AI SDE interview coach. It hears your voice with human-l
 
 ### Transport — Low Latency Audio
 - **LiveKit WebRTC** — optimised audio streaming from browser to backend
-- **Gemini Live server-side VAD** — turn detection handled natively by the model (no local Silero/SmartTurn needed)
+- **Gemini Live server-side VAD** — turn detection handled natively by the model
 
 ### Agent Core
-- **Google ADK** — orchestration framework (mandatory); defines agent instruction + tools via `LlmAgent`
+- **Google ADK** — orchestration framework; defines agent instruction + tools via `LlmAgent`
 - **Gemini Live native audio** — bidi-streaming audio (`gemini-live-2.5-flash-native-audio` on Vertex AI)
 - **ADK ↔ LiveKit bridge** — custom async adapter streams WebRTC PCM16 audio into the ADK live session
 
-### Memory & Sessions — 100% Google
+### Interview Tools
+- `get_interview_question` — pulls a question by round + category from the built-in question bank
+- `record_answer_note` — saves structured strength/weakness notes to session memory
+- `get_session_summary` — returns a spoken performance summary across all completed rounds
+- `get_current_time` — answer-timing signals to the candidate
+
+### Memory & Sessions
 - **`VertexAiSessionService`** — ADK-native persistent session service backed by **Vertex AI Agent Engine**
-- Stores full conversation history, user context, and facts per `user_id` automatically
+- Stores full conversation history, user context, and notes per `user_id` automatically
+- Falls back to `InMemorySessionService` for local dev without GCP credentials
 
 ### Frontend
 - **Vite + React** — real-time dashboard
@@ -45,62 +35,42 @@ Aura is a high-fidelity AI SDE interview coach. It hears your voice with human-l
 - **Vertex AI Agent Engine** — persistent session + memory storage
 - **Terraform** — full IaC for Cloud Run, IAM, Secret Manager, Vertex AI enablement
 - **Cloud Build** — CI/CD triggered on push to `main`
-- **Secret Manager** — API keys (Gemini/Vertex, LiveKit)
+- **Secret Manager** — LiveKit API credentials
 
 ---
 
-## 🏁 Phase 1: Backend Foundation
+## ✅ Phase 1: Backend Foundation
 
-**Goal**: Working audio loop — user speaks, Gemini responds, interruptions handled, sessions persist.
+- [x] Initialise Python project with `google-adk`, `google-genai`, `livekit`, `livekit-api`
+- [x] Define `LlmAgent` with system instruction + interview tools
+- [x] Configure `VertexAiSessionService` for per-user persistent sessions on Vertex AI
+- [x] Configure Gemini Live session (`gemini-live-2.5-flash-native-audio`, audio modality, server VAD)
+- [x] Build ADK ↔ LiveKit bridge: LiveKit `AudioStream` → PCM16 → `genai.aio.live` session
+- [x] Route Gemini audio responses → LiveKit `AudioSource` → participant speaker
+- [x] Handle ADK tool calls dispatched during live audio session
+- [x] Wire barge-in / interruption via Gemini server-side VAD
+- [x] Session timer processor for idle timeout + max call duration
 
-- [ ] Initialise Python project with `google-adk`, `google-genai`, `livekit`, `livekit-api`
-- [ ] Define `LlmAgent` with system instruction + ADK tools (`get_current_time`, extensible)
-- [ ] Configure `VertexAiSessionService` for per-user persistent sessions on Vertex AI
-- [ ] Configure Gemini Live session (`gemini-live-2.5-flash-native-audio`, audio modality, server VAD)
-- [ ] Build ADK ↔ LiveKit bridge: LiveKit `AudioStream` → PCM16 → `genai.aio.live` session
-- [ ] Route Gemini audio responses → LiveKit `AudioSource` → participant speaker
-- [ ] Handle ADK tool calls dispatched during live audio session
-- [x] Wire barge-in / interruption via Gemini server-side VAD (no local VAD needed)
-- [ ] Verify end-to-end round-trip latency < 600 ms locally
+## ✅ Phase 2: Frontend Dashboard
 
-## 🏁 Phase 2: Frontend Dashboard
+- [x] Scaffold Vite + React project in `frontend/`
+- [x] Integrate LiveKit JS SDK — connect to room, publish mic track
+- [x] Audio waveform visualiser (user speaking vs. bot speaking states)
+- [x] Interrupt button + visual state sync
+- [x] Token endpoint wired to backend LiveKit room service
 
-**Goal**: Browser UI that users can actually demo.
+## ✅ Phase 3: Cloud Deployment (IaC)
 
-- [ ] Scaffold Vite + React project in `frontend/`
-- [ ] Integrate LiveKit JS SDK — connect to room, publish mic track
-- [ ] Audio waveform visualiser (user speaking vs. bot speaking states)
-- [ ] Interrupt button + visual state sync (shows when bot is talking, clears on barge-in)
-- [ ] Token endpoint wired to backend LiveKit room service
+- [x] `Dockerfile` — multi-stage: Node.js frontend build + Python 3.11 slim runtime
+- [x] Terraform in `infra/` — Cloud Run service, IAM roles, Secret Manager secrets
+- [x] `infra/deploy.sh` — one-click bootstrap (`gcloud` auth → `terraform apply`)
+- [x] `cloudbuild.yaml` — CI/CD pipeline triggered on push to `main`
 
-## 🏁 Phase 3: Cloud Deployment (IaC)
+## 🔲 Phase 4: Enhancements
 
-**Goal**: Backend live on Google Cloud, reproducible one-command deploy.
-
-- [ ] Write `Dockerfile` for backend service
-- [ ] Write Terraform in `infra/` — Cloud Run service, IAM roles, Secret Manager secrets
-- [ ] Write `infra/deploy.sh` — one-click bootstrap (`gcloud` auth → `terraform apply`)
-- [ ] Set up Cloud Build trigger on `main` branch push
-- [ ] Deploy and capture proof screen recording (Cloud Run console + live logs)
-- [ ] Add Cloud Run service URL to README
-
-## 🏁 Phase 4: Architecture Diagram & Docs
-
-**Goal**: Submission artefacts ready.
-
-- [ ] Generate Mermaid architecture diagram (browser → LiveKit → ADK → Gemini Live → back)
-- [ ] Write `design_doc.md` — architecture, decisions, engineering challenges
-- [ ] README with spin-up instructions (local dev + cloud deploy)
-- [ ] Draft technical blog post (`#GeminiLiveAgentChallenge`)
-
-## 🏁 Phase 5: Submission
-
-**Goal**: All submission requirements met.
-
-- [ ] Write final text description (features, tech stack, learnings)
-- [ ] Record <4 min demo video (real-time multimodal features, no mockups)
-- [ ] Record Cloud proof screen recording (Cloud Run console / live logs)
-- [ ] Add GDG profile link to README
-- [ ] Verify public repo access, all files committed
-- [ ] Submit at GeminiLiveAgentChallenge.com
+- [ ] Add Round 4 debrief logic — auto-detect weak spots from `record_answer_note` history
+- [ ] Scoring rubric per round (1–4 scale, spoken at end of each round)
+- [ ] Candidate progress dashboard in frontend (rounds completed, scores over time)
+- [ ] Support for custom question sets via environment config
+- [ ] Add architecture diagram to README
 
