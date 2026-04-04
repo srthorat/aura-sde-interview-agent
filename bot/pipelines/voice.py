@@ -133,14 +133,20 @@ def _build_genai_client() -> genai.Client:
 
 
 def _build_session_service():
-    """VertexAiSessionService on GCP; InMemorySessionService for local dev."""
+    """VertexAiSessionService when VERTEX_AI_REASONING_ENGINE_ID is set; InMemorySessionService otherwise."""
     project = os.environ.get("GOOGLE_CLOUD_PROJECT_ID")
     location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
-    if project:
+    engine_id = os.environ.get("VERTEX_AI_REASONING_ENGINE_ID", "").strip()
+    if project and engine_id:
         try:
-            return VertexAiSessionService(project=project, location=location)
+            svc = VertexAiSessionService(project=project, location=location)
+            logger.info(f"[adk] Using VertexAiSessionService (engine: {engine_id})")
+            return svc
         except Exception as exc:
             logger.warning(f"[adk] VertexAiSessionService unavailable, using InMemory: {exc}")
+    else:
+        if project and not engine_id:
+            logger.info("[adk] VERTEX_AI_REASONING_ENGINE_ID not set — using InMemorySessionService")
     return InMemorySessionService()
 
 
@@ -236,7 +242,14 @@ def _history_to_context(history: list) -> str:
 async def _load_adk_session(
     session_service, agent: Agent, user_id: str
 ) -> tuple[Session, str]:
-    app_name = agent.name
+    # Use the full Reasoning Engine resource name when available, otherwise agent name
+    engine_id = os.environ.get("VERTEX_AI_REASONING_ENGINE_ID", "").strip()
+    project = os.environ.get("GOOGLE_CLOUD_PROJECT_ID", "")
+    location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+    if engine_id and project:
+        app_name = f"projects/{project}/locations/{location}/reasoningEngines/{engine_id}"
+    else:
+        app_name = agent.name
     try:
         sessions = await session_service.list_sessions(app_name=app_name, user_id=user_id)
         existing = getattr(sessions, "sessions", []) or []
