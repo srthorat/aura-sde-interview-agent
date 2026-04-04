@@ -1,0 +1,10 @@
+services:
+  aura:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    env_file:
+      - .env
+    ports:
+      - "7862:7862"

@@ -1,0 +1,26 @@
+[project]
+name = "aura-voice-agent"
+version = "0.1.0"
+description = "Aura Voice AI Agent — Solution 4: Google ADK + Gemini Live native audio + LiveKit"
+requires-python = ">=3.11"
+dependencies = [
+    "google-adk>=0.3.0",
+    "google-genai>=1.9.0",
+    "google-auth>=2.0.0",
+    "livekit>=0.19.0",
+    "livekit-api>=1.0.0",
+    "numpy>=1.26.0",
+    "python-dotenv>=1.0.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "loguru>=0.7.0",
+]
+
+[tool.uv]
+package = false
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+]

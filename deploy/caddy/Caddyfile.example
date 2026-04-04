@@ -1,0 +1,43 @@
+# Aura Voice Agent (Solution 4) — Caddy reverse proxy
+#
+# Use this when deploying on a Google Compute Engine (GCE) VM.
+# For Cloud Run deployments HTTPS is handled automatically by Google —
+# this file is not needed there.
+#
+# HTTPS is required for browser microphone access on public URLs.
+# Caddy automatically obtains and renews a TLS certificate from Let's Encrypt.
+#
+# Steps:
+# 1. Create a GCE VM and open ports 80 + 443 in the firewall
+# 2. Point your DNS A record to the VM's external IP
+# 3. Replace aura.example.com below with your real domain
+# 4. Copy this file to /etc/caddy/Caddyfile on the VM
+# 5. Reload or start Caddy:
+#      sudo systemctl enable --now caddy
+#      # or, if already running:
+#      sudo systemctl reload caddy
+#
+# The Aura container is expected to be running on 127.0.0.1:7862
+# (set PORT=7862 in solution4/.env, or override with the PORT env var)
+
+aura.example.com {
+    encode gzip
+
+    reverse_proxy 127.0.0.1:7862 {
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Forwarded-Host {host}
+        header_up X-Forwarded-For {remote_host}
+
+        # Keep WebSocket connections alive for LiveKit signalling
+        transport http {
+            keepalive 30s
+            keepalive_idle_conns 10
+        }
+    }
+}
+
+# Optional: redirect bare HTTP to HTTPS (Caddy does this automatically for
+# named hosts, so this block is only needed if you want an explicit 301):
+# http://aura.example.com {
+#     redir https://aura.example.com{uri} permanent
+# }

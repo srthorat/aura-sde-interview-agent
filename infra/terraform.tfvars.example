@@ -1,0 +1,21 @@
+# ── Aura Solution 4 — Terraform variable values ──────────────────────────────
+# Copy to terraform.tfvars and fill in your values before running deploy.sh
+# Never commit this file — it is listed in .gitignore
+
+project_id  = "your-gcp-project-id"
+region      = "us-central1"
+livekit_url = "wss://your-livekit-project.livekit.cloud"
+
+# Custom domain (aura.veloxpro.in via Global HTTPS Load Balancer)
+# Set to true once the Cloud Run service is deployed and you are ready
+# to provision the LB + SSL cert + GoDaddy DNS record.
+enable_custom_domain = false
+custom_domain        = "aura.veloxpro.in"
+
+# Optional overrides
+# gemini_live_model       = "gemini-live-2.5-flash-native-audio"
+# gemini_voice            = "Aoede"
+# cloud_run_min_instances = 1   # 1 = always warm, 0 = scale to zero
+# cloud_run_max_instances = 10
+# cloud_run_cpu           = "2"
+# cloud_run_memory        = "2Gi"
