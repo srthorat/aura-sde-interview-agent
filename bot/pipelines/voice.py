@@ -408,14 +408,15 @@ class AuraVoiceSession:
         await self._room.disconnect()
 
     async def _send_audio_loop(self, live_session) -> None:
-        pub = await self._wait_for_audio_participant()
-        if pub is None:
-            logger.warning("[aura] No audio participant found")
+        track = await self._wait_for_audio_track()
+        if track is None:
+            logger.warning("[aura] No audio track found — send loop exiting")
             return
 
-        audio_stream = rtc.AudioStream(pub.track)
+        audio_stream = rtc.AudioStream(track)
         buffer = b""
         last_speech_time = time.monotonic()
+        logger.info("[aura] Audio send loop started")
 
         async for event in audio_stream:
             if not isinstance(event, rtc.AudioFrameEvent):
@@ -439,16 +440,38 @@ class AuraVoiceSession:
                     logger.warning("[aura] Idle timeout reached")
                     return
 
-    async def _wait_for_audio_participant(self):
+    async def _wait_for_audio_track(self):
+        """Wait for a remote audio track to be subscribed. Returns the Track object."""
         timeout = float(os.getenv("CONNECTION_TIMEOUT_SECS", "60"))
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            for p in self._room.remote_participants.values():
-                for pub in p.track_publications.values():
-                    if pub.kind == rtc.TrackKind.KIND_AUDIO and pub.track:
-                        return pub
-            await asyncio.sleep(0.2)
-        return None
+        track_ready: asyncio.Event = asyncio.Event()
+        found_track = None
+
+        def _on_track_subscribed(track, pub, participant):
+            nonlocal found_track
+            if track.kind == rtc.TrackKind.KIND_AUDIO:
+                logger.info(f"[aura] Audio track subscribed from {participant.identity}")
+                found_track = track
+                track_ready.set()
+
+        self._room.on("track_subscribed", _on_track_subscribed)
+
+        # Check for already-subscribed audio tracks (timing race on fast connects)
+        for p in self._room.remote_participants.values():
+            for pub in p.track_publications.values():
+                if pub.kind == rtc.TrackKind.KIND_AUDIO and pub.track:
+                    self._room.off("track_subscribed", _on_track_subscribed)
+                    logger.info(f"[aura] Audio track already available from {p.identity}")
+                    return pub.track
+
+        try:
+            await asyncio.wait_for(track_ready.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            logger.warning("[aura] Timed out waiting for participant audio track")
+            found_track = None
+        finally:
+            self._room.off("track_subscribed", _on_track_subscribed)
+
+        return found_track
 
     async def _recv_loop(
         self,
