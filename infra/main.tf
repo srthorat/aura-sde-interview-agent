@@ -21,7 +21,7 @@ resource "google_artifact_registry_repository" "aura" {
   location      = var.region
   repository_id = "aura"
   format        = "DOCKER"
-  description   = "Aura voice agent container images"
+  description   = "Aura SDE Interview Agent container images"
   depends_on    = [google_project_service.apis]
 }
 
@@ -33,7 +33,7 @@ locals {
 resource "google_service_account" "aura_run" {
   project      = var.project_id
   account_id   = "aura-cloud-run"
-  display_name = "Aura Cloud Run Service Account"
+  display_name = "Aura SDE Interview Agent Service Account"
 }
 
 # Allow Cloud Run SA to use Vertex AI
@@ -68,7 +68,7 @@ resource "google_secret_manager_secret" "livekit_api_secret" {
 # ── Cloud Run Service ─────────────────────────────────────────────────────────
 resource "google_cloud_run_v2_service" "aura" {
   project  = var.project_id
-  name     = "aura-voice-agent"
+  name     = "aura-sde-interview-agent"
   location = var.region
 
   template {

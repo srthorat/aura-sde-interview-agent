@@ -1,5 +1,5 @@
 output "cloud_run_url" {
-  description = "HTTPS URL of the deployed Aura Cloud Run service"
+  description = "HTTPS URL of the deployed Aura SDE Interview Agent Cloud Run service"
   value       = google_cloud_run_v2_service.aura.uri
 }
 
@@ -14,6 +14,6 @@ output "service_account_email" {
 }
 
 output "lb_ip" {
-  description = "Global static IP for the HTTPS Load Balancer — add this as an A record in GoDaddy: aura → <lb_ip>"
+  description = "Global static IP for the HTTPS Load Balancer — add this as an A record: aura-sde-interview-agent → <lb_ip>"
   value       = var.enable_custom_domain ? google_compute_global_address.aura_lb_ip[0].address : "custom domain not enabled (set enable_custom_domain = true)"
 }

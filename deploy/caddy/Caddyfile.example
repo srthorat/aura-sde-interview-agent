@@ -1,4 +1,4 @@
-# Aura Voice Agent (Solution 4) — Caddy reverse proxy
+# Aura SDE Interview Agent — Caddy reverse proxy
 #
 # Use this when deploying on a Google Compute Engine (GCE) VM.
 # For Cloud Run deployments HTTPS is handled automatically by Google —
@@ -18,7 +18,7 @@
 #      sudo systemctl reload caddy
 #
 # The Aura container is expected to be running on 127.0.0.1:7862
-# (set PORT=7862 in solution4/.env, or override with the PORT env var)
+# (set PORT=7862 in .env, or override with the PORT env var)
 
 aura.example.com {
     encode gzip

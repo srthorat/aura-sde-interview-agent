@@ -23,7 +23,7 @@ variable "livekit_url" {
 variable "livekit_room_prefix" {
   description = "Prefix used when generating LiveKit room names"
   type        = string
-  default     = "aura-s4"
+  default     = "aura-interview"
 }
 
 variable "gemini_live_model" {

@@ -10,7 +10,7 @@ steps:
       - '${_REGION}-docker.pkg.dev/$PROJECT_ID/aura/aura-backend:latest'
       - --cache-from
       - '${_REGION}-docker.pkg.dev/$PROJECT_ID/aura/aura-backend:latest'
-      - solution4
+      - .
     dir: '.'
 
   # ── 2. Deploy to Cloud Run ─────────────────────────────────────────────────
@@ -21,7 +21,7 @@ steps:
       - run
       - services
       - update
-      - aura-voice-agent
+      - aura-sde-interview-agent
       - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/aura/aura-backend:$COMMIT_SHA
       - --region=${_REGION}
       - --quiet

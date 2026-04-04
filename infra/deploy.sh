@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# ── Aura Solution 4 — One-click deploy ───────────────────────────────────────
+# ── Aura SDE Interview Agent — One-click deploy ──────────────────────────────
 # Usage:
-#   cd solution4/infra
+#   cd infra
 #   cp terraform.tfvars.example terraform.tfvars   # fill in your values
 #   ./deploy.sh
 #
@@ -21,7 +21,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SOLUTION4_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+APP_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # ── Load project_id and region from tfvars ────────────────────────────────────
 if [[ ! -f "${SCRIPT_DIR}/terraform.tfvars" ]]; then
@@ -78,22 +78,22 @@ REGISTRY="${REGION}-docker.pkg.dev/${PROJECT_ID}/aura"
 IMAGE_URL="${REGISTRY}/aura-backend:latest"
 
 gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
-docker build -t "${IMAGE_URL}" "${SOLUTION4_DIR}"
+docker build -t "${IMAGE_URL}" "${APP_DIR}"
 docker push "${IMAGE_URL}"
 
 # ── Deploy updated image to Cloud Run ────────────────────────────────────────
 echo ""
 echo "==> Deploying to Cloud Run"
-gcloud run services update aura-voice-agent \
+gcloud run services update aura-sde-interview-agent \
   --image="${IMAGE_URL}" \
   --region="${REGION}" \
   --project="${PROJECT_ID}"
 
 # ── Done ─────────────────────────────────────────────────────────────────────
 echo ""
-SERVICE_URL=$(gcloud run services describe aura-voice-agent \
+SERVICE_URL=$(gcloud run services describe aura-sde-interview-agent \
   --region="${REGION}" --project="${PROJECT_ID}" \
   --format='value(status.url)')
 echo "=========================================="
-echo "  Aura is live at: ${SERVICE_URL}"
+echo "  Aura SDE Interview Agent is live at: ${SERVICE_URL}"
 echo "=========================================="

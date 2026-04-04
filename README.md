@@ -1,8 +1,6 @@
-# Aura — Voice AI Agent (Solution 4)
+# Aura — SDE Interview Agent
 
-**Gemini Live Agent Challenge** · Live Agents category
-
-Aura is a real-time voice AI assistant built on the **Google ADK** + **Gemini Live** native audio stack with **LiveKit** WebRTC transport and **Vertex AI** persistent session memory. No Pipecat, no Azure, no Redis — pure Google Cloud.
+Aura is a real-time AI-powered SDE interview coach built on the **Google ADK** + **Gemini Live** native audio stack with **LiveKit** WebRTC transport and **Vertex AI** persistent session memory. No Pipecat, no Azure, no Redis — pure Google Cloud.
 
 | Layer | Technology |
 |---|---|
@@ -24,7 +22,7 @@ Browser mic → LiveKit WebRTC → PCM16 @ 16 kHz → Gemini Live (Vertex AI)
 Browser speaker ← LiveKit WebRTC ← PCM16 @ 24 kHz ← Gemini audio response
 ```
 
-Full diagram and design decisions: [`solution4_design_doc.md`](../solution4_design_doc.md)
+Full diagram and design decisions: see [Architecture](#architecture) section above.
 
 ---
 
@@ -40,7 +38,8 @@ Full diagram and design decisions: [`solution4_design_doc.md`](../solution4_desi
 ### 1. Clone and install
 
 ```bash
-cd solution4
+git clone https://github.com/srthorat/aura-sde-interview-agent.git
+cd aura-sde-interview-agent
 cp .env.example .env
 # Fill in .env — see section below
 uv sync

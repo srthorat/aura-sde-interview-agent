@@ -1,8 +1,6 @@
-# Implementation Plan: Aura — Multimodal Live Agent
+# Implementation Plan: Aura — SDE Interview Agent
 
-**Category**: Live Agents (primary) + UI Navigator (stretch goal if time permits)
-
-Aura is a high-fidelity multimodal assistant for the **Gemini Live Agent Challenge**. It sees your screen in real-time, hears your voice with human-like turn detection, and acts on your behalf with sub-second latency.
+Aura is a high-fidelity AI SDE interview coach. It hears your voice with human-like turn detection, conducts structured Google-style interviews, and provides real-time feedback with sub-second latency.
 
 ---
 
@@ -15,14 +13,11 @@ Aura is a high-fidelity multimodal assistant for the **Gemini Live Agent Challen
 | Google Cloud hosting | **Cloud Run** (backend), **Cloud Build** (CI/CD), **Vertex AI** (sessions + memory) |
 | Multimodal I/O | Audio in + audio out |
 | Public repo + README | ✓ |
-| <4m demo video | Phase 5 |
 | Architecture diagram | Phase 4 |
 | Cloud deployment proof | Phase 3 (Terraform + Cloud Build logs) |
 
 ### Bonus Points
 1. **Automated deployment** — Terraform + `infra/deploy.sh` (IaC in public repo)
-2. **Blog post / content** — Technical writeup with `#GeminiLiveAgentChallenge`
-3. **GDG profile link** — Added to README
 
 ---
 
@@ -73,7 +68,7 @@ Aura is a high-fidelity multimodal assistant for the **Gemini Live Agent Challen
 
 **Goal**: Browser UI that users can actually demo.
 
-- [ ] Scaffold Vite + React project in `solution4/frontend/`
+- [ ] Scaffold Vite + React project in `frontend/`
 - [ ] Integrate LiveKit JS SDK — connect to room, publish mic track
 - [ ] Audio waveform visualiser (user speaking vs. bot speaking states)
 - [ ] Interrupt button + visual state sync (shows when bot is talking, clears on barge-in)
@@ -95,7 +90,7 @@ Aura is a high-fidelity multimodal assistant for the **Gemini Live Agent Challen
 **Goal**: Submission artefacts ready.
 
 - [ ] Generate Mermaid architecture diagram (browser → LiveKit → ADK → Gemini Live → back)
-- [ ] Write `solution4_design_doc.md` — architecture, decisions, engineering challenges
+- [ ] Write `design_doc.md` — architecture, decisions, engineering challenges
 - [ ] README with spin-up instructions (local dev + cloud deploy)
 - [ ] Draft technical blog post (`#GeminiLiveAgentChallenge`)
 
