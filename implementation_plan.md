@@ -35,10 +35,9 @@ Aura is a high-fidelity AI SDE interview coach. It hears your voice with human-l
 ### Memory & Sessions — 100% Google
 - **`VertexAiSessionService`** — ADK-native persistent session service backed by **Vertex AI Agent Engine**
 - Stores full conversation history, user context, and facts per `user_id` automatically
-- **No Redis, no PostgreSQL, no Azure, no OpenAI** — pure Google Cloud
 
 ### Frontend
-- **Vite + React** — real-time dashboard (copied from solution3)
+- **Vite + React** — real-time dashboard
 - **LiveKit JS SDK** — WebRTC client, audio visualiser, interrupt state sync
 
 ### Infrastructure

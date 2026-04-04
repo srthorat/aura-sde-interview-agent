@@ -1,6 +1,6 @@
 # Aura — SDE Interview Agent
 
-Aura is a real-time AI-powered SDE interview coach built on the **Google ADK** + **Gemini Live** native audio stack with **LiveKit** WebRTC transport and **Vertex AI** persistent session memory. No Pipecat, no Azure, no Redis — pure Google Cloud.
+Aura is a real-time AI-powered SDE interview coach built on the **Google ADK** + **Gemini Live** native audio stack with **LiveKit** WebRTC transport and **Vertex AI** persistent session memory.
 
 | Layer | Technology |
 |---|---|
@@ -8,6 +8,7 @@ Aura is a real-time AI-powered SDE interview coach built on the **Google ADK** +
 | Voice model | `gemini-live-2.5-flash-native-audio` via Vertex AI bidi stream |
 | WebRTC transport | LiveKit (`livekit`, `livekit-api`) |
 | Session memory | Vertex AI Agent Engine (`VertexAiSessionService`) |
+| Infra | Google Cloud only (Cloud Run, Artifact Registry, Secret Manager, Vertex AI) |
 | Backend | FastAPI + Python 3.11, containerised on Cloud Run |
 | Frontend | Vite + React + LiveKit JS SDK |
 | IaC | Terraform + Cloud Build CI/CD |
@@ -102,7 +103,7 @@ Open `http://localhost:7862`.
 ### One-click deploy
 
 ```bash
-cd solution4/infra
+cd infra
 cp terraform.tfvars.example terraform.tfvars   # fill in project_id, livekit_url, etc.
 ./deploy.sh
 ```
@@ -116,7 +117,7 @@ The script:
 ### Manual Terraform
 
 ```bash
-cd solution4/infra
+cd infra
 cp terraform.tfvars.example terraform.tfvars   # edit values
 
 terraform init
@@ -126,7 +127,7 @@ terraform apply
 
 ### CI/CD
 
-`cloudbuild.yaml` at the root of `solution4/` is triggered automatically on every push to `main` that touches `solution4/**`. It:
+`cloudbuild.yaml` at the repo root is triggered automatically on every push to `main`. It:
 1. Builds the Docker image (with layer caching from the `:latest` tag)
 2. Pushes `:<commit-sha>` and `:latest` to Artifact Registry
 3. Rolls out the new image to Cloud Run
@@ -159,7 +160,6 @@ See [`.env.example`](.env.example) for the full list with descriptions. Key vari
 ## Project Structure
 
 ```
-solution4/
 ├── bot/
 │   ├── agent.py              # ADK LlmAgent, tool registry, LIVE_TOOL_DECLARATIONS
 │   ├── bot.py                # FastAPI app — /livekit/session, /health
@@ -168,7 +168,7 @@ solution4/
 │   ├── processors/
 │   │   └── session_timer.py  # Call duration utility
 │   └── prompts/
-│       └── system_prompt.md  # Aura persona and voice guidelines
+│       └── system_prompt.md  # Aura persona and interview guidelines
 ├── frontend/
 │   ├── public/demo.html      # Voice UI (real-time transcript + metrics)
 │   └── src/App.tsx           # Vite/React wrapper
