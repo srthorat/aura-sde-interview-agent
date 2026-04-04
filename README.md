@@ -1,6 +1,6 @@
-# Aura — SDE Interview Agent
+# Aura — Google SDE Interview Coach
 
-Aura is a real-time AI-powered SDE interview coach built on the **Google ADK** + **Gemini Live** native audio stack with **LiveKit** WebRTC transport and **Vertex AI** persistent session memory.
+Aura is a real-time AI-powered Google SDE interview coach built on the **Google ADK** + **Gemini Live** native audio stack with **LiveKit** WebRTC transport and **Vertex AI** persistent session memory.
 
 | Layer | Technology |
 |---|---|

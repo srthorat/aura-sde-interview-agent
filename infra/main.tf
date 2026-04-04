@@ -21,7 +21,7 @@ resource "google_artifact_registry_repository" "aura" {
   location      = var.region
   repository_id = "aura"
   format        = "DOCKER"
-  description   = "Aura SDE Interview Agent container images"
+  description   = "Aura — Google SDE Interview Coach container images"
   depends_on    = [google_project_service.apis]
 }
 
@@ -33,7 +33,7 @@ locals {
 resource "google_service_account" "aura_run" {
   project      = var.project_id
   account_id   = "aura-cloud-run"
-  display_name = "Aura SDE Interview Agent Service Account"
+  display_name = "Aura — Google SDE Interview Coach Service Account"
 }
 
 # Allow Cloud Run SA to use Vertex AI

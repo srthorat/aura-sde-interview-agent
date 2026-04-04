@@ -1,4 +1,4 @@
-"""Aura SDE Interview Agent — backend entrypoint.
+"""Aura — Google SDE Interview Coach — backend entrypoint.
 
 Stack: Google ADK + Gemini Live + Vertex AI + LiveKit.
 

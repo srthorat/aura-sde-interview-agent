@@ -1,4 +1,4 @@
-"""Gemini Live ↔ LiveKit audio bridge for Aura SDE Interview Agent.
+"""Gemini Live ↔ LiveKit audio bridge for Aura — Google SDE Interview Coach.
 
 Architecture (ADK + google-genai):
 

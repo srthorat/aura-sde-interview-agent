@@ -1,6 +1,6 @@
-# Implementation Plan: Aura — SDE Interview Agent
+# Implementation Plan: Aura — Google SDE Interview Coach
 
-Aura is a real-time AI-powered SDE interview coach. It hears your voice with human-like turn detection, conducts structured Google-style interviews across four rounds, and provides live spoken feedback — all backed by persistent per-candidate session memory.
+Aura is a real-time AI-powered Google SDE interview coach. It hears your voice with human-like turn detection, conducts structured Google-style interviews across four rounds, and provides live spoken feedback — all backed by persistent per-candidate session memory.
 
 ---
 

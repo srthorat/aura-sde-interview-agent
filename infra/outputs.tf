@@ -1,5 +1,5 @@
 output "cloud_run_url" {
-  description = "HTTPS URL of the deployed Aura SDE Interview Agent Cloud Run service"
+  description = "HTTPS URL of the deployed Aura — Google SDE Interview Coach Cloud Run service"
   value       = google_cloud_run_v2_service.aura.uri
 }
 

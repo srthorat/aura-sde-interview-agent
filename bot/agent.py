@@ -1,4 +1,4 @@
-"""ADK Agent definition for Aura — Google Interview Coach.
+"""ADK Agent definition for Aura — Google SDE Interview Coach.
 
 Aura is a real-time voice interview coach that conducts Google-style
 technical interviews (coding, system design, behavioural) with full

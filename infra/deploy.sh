@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ── Aura SDE Interview Agent — One-click deploy ──────────────────────────────
+# ── Aura — Google SDE Interview Coach — One-click deploy ────────────────────
 # Usage:
 #   cd infra
 #   cp terraform.tfvars.example terraform.tfvars   # fill in your values
@@ -95,5 +95,5 @@ SERVICE_URL=$(gcloud run services describe aura-sde-interview-agent \
   --region="${REGION}" --project="${PROJECT_ID}" \
   --format='value(status.url)')
 echo "=========================================="
-echo "  Aura SDE Interview Agent is live at: ${SERVICE_URL}"
+echo "  Aura — Google SDE Interview Coach is live at: ${SERVICE_URL}"
 echo "=========================================="

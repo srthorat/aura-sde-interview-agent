@@ -1,4 +1,4 @@
-# Aura SDE Interview Agent — Caddy reverse proxy
+# Aura — Google SDE Interview Coach — Caddy reverse proxy
 #
 # Use this when deploying on a Google Compute Engine (GCE) VM.
 # For Cloud Run deployments HTTPS is handled automatically by Google —
