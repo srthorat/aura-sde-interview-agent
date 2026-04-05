@@ -71,6 +71,82 @@ _QUESTIONS: dict[str, list[str]] = {
     ],
 }
 
+# Topic-tagged questions for when the candidate requests a specific data structure or algorithm
+_QUESTIONS_BY_TOPIC: dict[str, list[str]] = {
+    "stack": [
+        "How would you implement a queue using only two stacks? Walk me through enqueue and dequeue.",
+        "Use a stack to evaluate a mathematical expression given in postfix notation.",
+        "Describe how you would use a stack to check for balanced parentheses in a string.",
+        "How would you implement a min-stack that supports push, pop, and getMin all in O(1)?",
+    ],
+    "queue": [
+        "How would you implement a queue using only two stacks?",
+        "Design a circular queue using a fixed-size array. How do you handle wrap-around?",
+        "Explain how a deque (double-ended queue) works and when you would use one over a regular queue.",
+        "How would you use a queue to implement BFS on a graph? Walk through your approach.",
+    ],
+    "linked list": [
+        "How would you detect a cycle in a singly linked list? What is the time and space complexity?",
+        "Walk me through reversing a singly linked list in-place.",
+        "How would you merge two sorted linked lists without extra space?",
+        "Find the middle element of a linked list in one pass. How does your approach handle even-length lists?",
+    ],
+    "tree": [
+        "How would you check if a binary tree is balanced? Walk through your approach and complexity.",
+        "Describe the difference between in-order, pre-order, and post-order traversal. When would you use each?",
+        "How would you find the lowest common ancestor of two nodes in a binary search tree?",
+        "Given a binary tree, return the level-order traversal as a list of lists.",
+    ],
+    "graph": [
+        "Describe an approach to detect a cycle in a directed graph using DFS.",
+        "How would you find the shortest path between two nodes in an unweighted graph?",
+        "Explain how topological sort works. What kind of graph does it require?",
+        "Walk me through how you would check if a graph is bipartite.",
+    ],
+    "array": [
+        "Given an unsorted array, find the two numbers that add up to a target sum. What is the optimal complexity?",
+        "How would you find the maximum subarray sum? Describe Kadane's algorithm.",
+        "Rotate an array to the right by k steps in O(1) extra space.",
+        "Given a sorted array, search for a target value in O(log n). How does binary search handle edge cases?",
+    ],
+    "hash map": [
+        "How would you implement an LRU cache using a hash map and a doubly linked list?",
+        "Find the first non-repeating character in a string using a hash map.",
+        "Group anagrams together from a list of strings. What is the time complexity?",
+        "Given an array, find all pairs that sum to zero. How does a hash set help here?",
+    ],
+    "string": [
+        "Walk me through finding the longest substring without repeating characters.",
+        "How would you check if two strings are anagrams of each other?",
+        "Implement string compression: 'aabcccdddd' → 'a2b1c3d4'.",
+        "Given a string, find the longest palindromic substring. What is your approach?",
+    ],
+    "recursion": [
+        "Implement the Fibonacci sequence both recursively and iteratively. Compare the complexities.",
+        "How would you solve the Tower of Hanoi problem recursively? What is the recurrence relation?",
+        "Walk me through generating all subsets of a set using recursion.",
+        "How would you flatten a deeply nested list using recursion?",
+    ],
+    "dynamic programming": [
+        "Explain how you would solve the 0/1 knapsack problem using dynamic programming.",
+        "How would you find the longest common subsequence of two strings?",
+        "Walk me through the coin change problem — find the minimum number of coins for a target amount.",
+        "How does memoisation differ from tabulation? Give a concrete example.",
+    ],
+    "sorting": [
+        "Walk me through quicksort. What is the average and worst-case complexity, and when does worst-case occur?",
+        "Explain merge sort. How would you use it to sort a linked list?",
+        "What is the difference between a stable and an unstable sort? Give an example of each.",
+        "How would you sort an array containing only 0s, 1s, and 2s in a single pass?",
+    ],
+    "binary search": [
+        "Implement binary search on a sorted array. How do you handle duplicates?",
+        "How would you find the first and last position of a target in a sorted array?",
+        "A sorted array has been rotated at an unknown pivot. How do you search it in O(log n)?",
+        "Use binary search to find the square root of a number without using the sqrt function.",
+    ],
+}
+
 _CATEGORIES_BY_ROUND = {
     1: ["behavioural"],
     2: ["coding"],
@@ -94,14 +170,35 @@ def get_current_time() -> dict[str, str]:
     }
 
 
-def get_interview_question(round_number: int = 1, category: str = "") -> dict[str, str]:
-    """Return a targeted interview question for the given round and category.
+def get_interview_question(round_number: int = 1, category: str = "", topic: str = "") -> dict[str, str]:
+    """Return a targeted interview question for the given round, category, and topic.
 
     Args:
         round_number: Interview round 1–4 (default 1).
         category: One of 'behavioural', 'coding', 'system_design', 'debrief'.
                   If empty, picks the default category for the round.
+        topic: Specific data structure or algorithm requested by the candidate.
+               Examples: 'stack', 'queue', 'linked list', 'tree', 'graph',
+               'array', 'hash map', 'string', 'recursion', 'dynamic programming',
+               'sorting', 'binary search'. Leave empty to pick from the full pool.
     """
+    # If a specific topic was requested, look it up directly
+    if topic:
+        topic_key = topic.lower().strip()
+        # Fuzzy match: check if any known topic key is contained in the request
+        matched_pool = None
+        for key, pool in _QUESTIONS_BY_TOPIC.items():
+            if key in topic_key or topic_key in key:
+                matched_pool = pool
+                break
+        if matched_pool:
+            available = [q for q in matched_pool if q not in _asked_this_session]
+            if not available:
+                available = matched_pool
+            question = random.choice(available)
+            _asked_this_session.append(question)
+            return {"question": question, "category": "coding", "round": str(round_number), "topic": topic_key}
+
     if not category:
         cats = _CATEGORIES_BY_ROUND.get(round_number, ["behavioural"])
         category = random.choice(cats)
@@ -170,8 +267,11 @@ LIVE_TOOL_DECLARATIONS = [
     {
         "name": "get_interview_question",
         "description": (
-            "Fetch a targeted interview question for a specific round and category. "
-            "Call this when you are ready to present the next question."
+            "Fetch a targeted interview question for a specific round, category, and topic. "
+            "ALWAYS call this when presenting the next question. "
+            "If the candidate mentions a specific data structure or algorithm (e.g. 'stack', 'queue', "
+            "'linked list', 'tree', 'graph', 'array', 'hash map', 'sorting', 'binary search', "
+            "'dynamic programming', 'recursion', 'string'), pass it as the topic parameter."
         ),
         "parameters": {
             "type": "OBJECT",
@@ -183,6 +283,15 @@ LIVE_TOOL_DECLARATIONS = [
                 "category": {
                     "type": "STRING",
                     "description": "Question category: 'behavioural', 'coding', 'system_design', or 'debrief'. Leave empty to use round default.",
+                },
+                "topic": {
+                    "type": "STRING",
+                    "description": (
+                        "Specific data structure or algorithm the candidate requested. "
+                        "One of: 'stack', 'queue', 'linked list', 'tree', 'graph', 'array', "
+                        "'hash map', 'string', 'recursion', 'dynamic programming', 'sorting', 'binary search'. "
+                        "Leave empty if the candidate did not specify a topic."
+                    ),
                 },
             },
             "required": [],

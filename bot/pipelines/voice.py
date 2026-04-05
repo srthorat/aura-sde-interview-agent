@@ -40,6 +40,7 @@ from loguru import logger
 from livekit import rtc
 
 from bot.agent import LIVE_TOOL_DECLARATIONS, build_adk_agent, dispatch_tool_call
+from bot.audio.rnnoise import RNNoiseFilter
 
 # ---------------------------------------------------------------------------
 # Audio constants
@@ -346,6 +347,23 @@ class AuraVoiceSession:
                 )
             ),
             tools=live_tools if live_tools else None,
+            # Tune server-side VAD to reduce echo false-triggers:
+            # - LOW start sensitivity: requires more confident speech before triggering
+            #   (prevents bot's speaker audio from being detected as user speech)
+            # - LOW end sensitivity: waits longer before cutting off user speech
+            # - silence_duration_ms: 800ms gap needed to end a user turn
+            # - prefix_padding_ms: 300ms of real speech needed before turn starts
+            realtime_input_config=genai_types.RealtimeInputConfig(
+                automatic_activity_detection=genai_types.AutomaticActivityDetection(
+                    start_of_speech_sensitivity=genai_types.StartSensitivity.START_SENSITIVITY_LOW,
+                    end_of_speech_sensitivity=genai_types.EndSensitivity.END_SENSITIVITY_LOW,
+                    prefix_padding_ms=int(os.getenv("VAD_PREFIX_PADDING_MS", "300")),
+                    silence_duration_ms=int(os.getenv("VAD_SILENCE_DURATION_MS", "800")),
+                ),
+            ),
+            # Enable transcriptions for both user input and bot output
+            input_audio_transcription=genai_types.AudioTranscriptionConfig(),
+            output_audio_transcription=genai_types.AudioTranscriptionConfig(),
         )
 
         # Publish output audio track to LiveKit
@@ -383,6 +401,19 @@ class AuraVoiceSession:
                 [send_task, recv_task, timeout_task],
                 return_when=asyncio.FIRST_COMPLETED,
             )
+
+            # Log which task ended the session and surface any exception
+            task_names = {send_task: "send", recv_task: "recv", timeout_task: "timeout"}
+            for t in done:
+                name = task_names.get(t, t.get_name())
+                exc = t.exception() if not t.cancelled() else None
+                if exc:
+                    logger.error(f"[aura] '{name}' task raised: {type(exc).__name__}: {exc}", exc_info=exc)
+                elif t.cancelled():
+                    logger.debug(f"[aura] '{name}' task cancelled")
+                else:
+                    logger.info(f"[aura] '{name}' task finished (triggered session end)")
+
             for t in pending:
                 t.cancel()
                 try:
@@ -414,31 +445,33 @@ class AuraVoiceSession:
             return
 
         audio_stream = rtc.AudioStream(track)
-        buffer = b""
-        last_speech_time = time.monotonic()
-        logger.info("[aura] Audio send loop started")
+        noise_filter = RNNoiseFilter()
+        logger.info(f"[aura] Audio send loop started (server-side VAD, RNNoise={'on' if noise_filter.enabled else 'off'})")
+        last_audio_time = time.monotonic()
 
         async for event in audio_stream:
             if not isinstance(event, rtc.AudioFrameEvent):
                 continue
-            buffer += _to_gemini_input(event.frame)
 
-            while len(buffer) >= SEND_CHUNK_BYTES:
-                chunk, buffer = buffer[:SEND_CHUNK_BYTES], buffer[SEND_CHUNK_BYTES:]
-                await live_session.send_realtime_input(
-                    audio=genai_types.Blob(
-                        data=chunk,
-                        mime_type=f"audio/pcm;rate={GEMINI_INPUT_SAMPLE_RATE}",
-                    )
+            pcm = _to_gemini_input(event.frame)
+            pcm = noise_filter.process(pcm)
+            if not pcm:
+                continue  # RNNoise still buffering
+            last_audio_time = time.monotonic()
+
+            # Idle timeout check
+            if time.monotonic() - last_audio_time > self._config.idle_timeout_secs:
+                logger.warning("[aura] Idle timeout reached")
+                return
+
+            # Stream audio straight to Gemini — server VAD handles turn detection
+            await live_session.send_realtime_input(
+                audio=genai_types.Blob(
+                    data=pcm,
+                    mime_type=f"audio/pcm;rate={GEMINI_INPUT_SAMPLE_RATE}",
                 )
-                rms = float(np.sqrt(np.mean(
-                    np.frombuffer(chunk, dtype=np.int16).astype(np.float32) ** 2
-                )))
-                if rms > 200:
-                    last_speech_time = time.monotonic()
-                elif time.monotonic() - last_speech_time > self._config.idle_timeout_secs:
-                    logger.warning("[aura] Idle timeout reached")
-                    return
+            )
+
 
     async def _wait_for_audio_track(self):
         """Wait for a remote audio track to be subscribed. Returns the Track object."""
@@ -479,87 +512,131 @@ class AuraVoiceSession:
         audio_source: rtc.AudioSource,
         new_turns: list[dict],
     ) -> None:
-        bot_buf = ""
+        # Separate buffers: model_turn text (non-native-audio) vs output_transcription (native audio ground truth)
+        bot_model_buf = ""
+        bot_tx_buf = ""
         user_buf = ""
+        bot_turn_active = False   # True after first output_transcription chunk in this turn
+        user_turn_active = False  # True after first input_transcription chunk in this turn
 
-        async for message in live_session.receive():
-            # Audio output → LiveKit
-            if message.data:
-                n = len(message.data) // 2
-                if n > 0:
-                    await audio_source.capture_frame(
-                        rtc.AudioFrame(
-                            data=message.data,
-                            sample_rate=GEMINI_OUTPUT_SAMPLE_RATE,
-                            num_channels=GEMINI_OUTPUT_CHANNELS,
-                            samples_per_channel=n,
-                        )
-                    )
-
-            if message.server_content:
-                sc = message.server_content
-
-                if sc.model_turn:
-                    for part in sc.model_turn.parts:
-                        txt = getattr(part, "text", None)
-                        if txt:
-                            bot_buf += txt
-                            await self._events.send(
-                                {"type": "bot-llm-text", "data": {"text": bot_buf}}
+        try:
+            while True:
+                async for message in live_session.receive():
+                    # Audio output → LiveKit
+                    if message.data:
+                        n = len(message.data) // 2
+                        if n > 0:
+                            await audio_source.capture_frame(
+                                rtc.AudioFrame(
+                                    data=message.data,
+                                    sample_rate=GEMINI_OUTPUT_SAMPLE_RATE,
+                                    num_channels=GEMINI_OUTPUT_CHANNELS,
+                                    samples_per_channel=n,
+                                )
                             )
 
-                if getattr(sc, "input_transcription", None):
-                    user_buf += sc.input_transcription.text or ""
-                    if user_buf.strip():
-                        await self._events.send({
-                            "type": "user-transcription",
-                            "data": {"text": user_buf.strip(), "final": False},
-                        })
+                    if message.server_content:
+                        sc = message.server_content
 
-                if sc.turn_complete:
-                    if bot_buf.strip():
-                        new_turns.append({"role": "model", "content": bot_buf.strip()})
-                        await self._events.send({
-                            "type": "bot-transcription",
-                            "data": {"text": bot_buf.strip(), "final": True},
-                        })
-                    if user_buf.strip():
-                        new_turns.append({"role": "user", "content": user_buf.strip()})
-                        await self._events.send({
-                            "type": "user-transcription",
-                            "data": {"text": user_buf.strip(), "final": True},
-                        })
-                    bot_buf = ""
-                    user_buf = ""
+                        if sc.model_turn:
+                            for part in sc.model_turn.parts:
+                                txt = getattr(part, "text", None)
+                                if txt:
+                                    bot_model_buf += txt
+                                    await self._events.send(
+                                        {"type": "bot-llm-text", "data": {"text": bot_model_buf}}
+                                    )
 
-                if getattr(sc, "interrupted", False):
-                    bot_buf = ""
-                    await self._events.send({"type": "interruption"})
+                        if getattr(sc, "input_transcription", None):
+                            user_buf += sc.input_transcription.text or ""
+                            logger.debug(f"[aura] user transcript: {sc.input_transcription.text!r}")
+                            if not user_turn_active:
+                                user_turn_active = True
+                                await self._events.send({"type": "user-started-speaking"})
+                            if user_buf.strip():
+                                await self._events.send({
+                                    "type": "user-transcription",
+                                    "data": {"text": user_buf.strip(), "final": False},
+                                })
 
-            # ADK tool dispatch
-            if message.tool_call:
-                for fc in message.tool_call.function_calls:
-                    result = await dispatch_tool_call(fc.name, dict(fc.args or {}))
-                    await live_session.send_tool_response(
-                        function_responses=[
-                            genai_types.FunctionResponse(
-                                id=fc.id,
-                                name=fc.name,
-                                response=result,
+                        if getattr(sc, "output_transcription", None) and sc.output_transcription.text:
+                            bot_tx_buf += sc.output_transcription.text
+                            logger.debug(f"[aura] bot transcript chunk: {sc.output_transcription.text!r}")
+                            if not bot_turn_active:
+                                bot_turn_active = True
+                                await self._events.send({"type": "bot-started-speaking"})
+                            # Send interim so frontend can show italic bubble as bot speaks
+                            if bot_tx_buf.strip():
+                                await self._events.send({
+                                    "type": "bot-transcription",
+                                    "data": {"text": bot_tx_buf.strip(), "final": False},
+                                })
+
+                        if sc.turn_complete:
+                            # Prefer output_transcription (ground truth of spoken audio); fall back to model_turn text
+                            final_bot = bot_tx_buf.strip() or bot_model_buf.strip()
+                            if final_bot:
+                                logger.info(f"[aura] bot turn: {final_bot[:80]}")
+                                new_turns.append({"role": "model", "content": final_bot})
+                                await self._events.send({
+                                    "type": "bot-transcription",
+                                    "data": {"text": final_bot, "final": True},
+                                })
+                            if bot_turn_active:
+                                await self._events.send({"type": "bot-stopped-speaking"})
+                            if user_buf.strip():
+                                logger.info(f"[aura] user turn: {user_buf.strip()[:80]}")
+                                new_turns.append({"role": "user", "content": user_buf.strip()})
+                                await self._events.send({
+                                    "type": "user-transcription",
+                                    "data": {"text": user_buf.strip(), "final": True},
+                                })
+                            if user_turn_active:
+                                await self._events.send({"type": "user-stopped-speaking"})
+                            bot_model_buf = ""
+                            bot_tx_buf = ""
+                            user_buf = ""
+                            bot_turn_active = False
+                            user_turn_active = False
+
+                        if getattr(sc, "interrupted", False):
+                            if bot_turn_active:
+                                await self._events.send({"type": "bot-stopped-speaking"})
+                            bot_model_buf = ""
+                            bot_tx_buf = ""
+                            bot_turn_active = False
+                            logger.info("[aura] Bot interrupted by user")
+                            await self._events.send({"type": "interruption"})
+
+                    # ADK tool dispatch
+                    if message.tool_call:
+                        for fc in message.tool_call.function_calls:
+                            result = await dispatch_tool_call(fc.name, dict(fc.args or {}))
+                            await live_session.send_tool_response(
+                                function_responses=[
+                                    genai_types.FunctionResponse(
+                                        id=fc.id,
+                                        name=fc.name,
+                                        response=result,
+                                    )
+                                ]
                             )
-                        ]
-                    )
 
-            if message.usage_metadata:
-                um = message.usage_metadata
-                await self._events.send({
-                    "type": "metrics",
-                    "data": {"tokens": [{
-                        "prompt_tokens": getattr(um, "prompt_token_count", 0),
-                        "completion_tokens": getattr(um, "candidates_token_count", 0),
-                        "total_tokens": getattr(um, "total_token_count", 0),
-                    }]},
-                })
+                    if message.usage_metadata:
+                        um = message.usage_metadata
+                        await self._events.send({
+                            "type": "metrics",
+                            "data": {"tokens": [{
+                                "prompt_tokens": getattr(um, "prompt_token_count", 0),
+                                "completion_tokens": getattr(um, "candidates_token_count", 0),
+                                "total_tokens": getattr(um, "total_token_count", 0),
+                            }]},
+                        })
+
+            logger.info("[aura] recv_loop: Gemini Live stream ended normally")
+
+        except Exception as exc:
+            logger.error(f"[aura] recv_loop error: {type(exc).__name__}: {exc}", exc_info=True)
 
 
 # ---------------------------------------------------------------------------

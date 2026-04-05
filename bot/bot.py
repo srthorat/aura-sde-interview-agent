@@ -151,7 +151,7 @@ def _launch_room_bot(*, room_name: str, user_id: str = "anonymous") -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Aura (Solution 4) backend starting")
+    logger.info("Aura — Google SDE Interview Coach backend starting")
     yield
 
     tasks = list(_room_tasks.values())

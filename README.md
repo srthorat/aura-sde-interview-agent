@@ -18,10 +18,41 @@ Aura is a real-time AI-powered Google SDE interview coach built on the **Google 
 ## Architecture
 
 ```
-Browser mic → LiveKit WebRTC → PCM16 @ 16 kHz → Gemini Live (Vertex AI)
-                                                        ↓
+Browser mic → LiveKit WebRTC → PCM16 @ 16 kHz
+                                    ↓
+                              RNNoise filter          ← bot/audio/rnnoise.py
+                                    ↓
+                         Gemini Live (Vertex AI)      ← server-side VAD
+                         gemini-live-2.5-flash-native-audio
+                                    ↓
 Browser speaker ← LiveKit WebRTC ← PCM16 @ 24 kHz ← Gemini audio response
 ```
+
+### VAD strategy — server-side only
+
+Aura uses **Gemini's built-in server-side VAD** exclusively. Client-side VAD libraries (Silero, SmartTurn) were evaluated and removed. Server VAD is configured via `RealtimeInputConfig`:
+
+| Parameter | Value | Effect |
+|---|---|---|
+| `start_of_speech_sensitivity` | `START_SENSITIVITY_LOW` | Requires confident speech onset — ignores faint background noise |
+| `end_of_speech_sensitivity` | `END_SENSITIVITY_LOW` | Waits longer before cutting off — reduces clipping on slow speakers |
+| `prefix_padding_ms` | `300` (env: `VAD_PREFIX_PADDING_MS`) | Includes 300 ms of audio before speech start — captures leading consonants |
+| `silence_duration_ms` | `800` (env: `VAD_SILENCE_DURATION_MS`) | 800 ms of silence to end a turn — balances latency vs. false cut-offs |
+
+### Latency analysis
+
+| Approach | End-of-speech → first audio byte | Notes |
+|---|---|---|
+| **Server VAD (current)** | **~150–300 ms** | VAD runs inside Gemini's inference pipeline; no round-trip penalty |
+| Client Silero + SmartTurn (removed) | ~900–1 400 ms | 700 ms Silero window + SmartTurn re-arm + network RTT for each decision |
+| Pure silence threshold (no VAD) | ~300–500 ms | Simple but clips fast speakers; misses barge-in |
+
+**Server VAD wins on latency** because:
+- VAD judgment happens inside the same process as the LLM — no extra network hop
+- Barge-in (interruption) is handled natively without any muting gate on the send path
+- `silence_duration_ms=800` is the only mandatory wait; the 150 ms figure applies when the model starts generating immediately after speech ends
+
+**RNNoise cost**: ~0.3 ms per 10 ms frame on a single CPU core — fully negligible.
 
 Full diagram and design decisions: see [Architecture](#architecture) section above.
 
@@ -77,6 +108,7 @@ uv run python -m bot.bot
 
 ```bash
 cd frontend
+nvm use   # picks Node 20 from .nvmrc automatically
 npm install
 npm run dev
 # http://localhost:3000
@@ -163,6 +195,8 @@ See [`.env.example`](.env.example) for the full list with descriptions. Key vari
 ├── bot/
 │   ├── agent.py              # ADK LlmAgent, tool registry, LIVE_TOOL_DECLARATIONS
 │   ├── bot.py                # FastAPI app — /livekit/session, /health
+│   ├── audio/
+│   │   └── rnnoise.py        # RNNoise noise suppression wrapper (pyrnnoise)
 │   ├── pipelines/
 │   │   └── voice.py          # AuraVoiceSession — LiveKit ↔ Gemini Live bridge
 │   ├── processors/

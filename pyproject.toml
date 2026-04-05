@@ -14,6 +14,10 @@ dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
     "loguru>=0.7.0",
+    "onnxruntime>=1.24.4",
+    "transformers>=5.5.0",
+    "soxr>=1.0.0",
+    "pyrnnoise>=0.4.3",
 ]
 
 [tool.uv]
@@ -21,6 +25,7 @@ package = false
 
 [dependency-groups]
 dev = [
+    "pylint>=4.0.5",
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
 ]

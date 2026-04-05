@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Aura - Voice Agent</title>
+<title>Aura — Google SDE Interview Coach</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap');
@@ -294,7 +294,7 @@ html,body {
     <div class="hdr-left">
       <div class="hdr-dot"></div>
       <span class="hdr-name">Aura</span>
-      <span class="hdr-sub">/ voice agent 04</span>
+      <span class="hdr-sub">/ Google SDE Interview Coach</span>
     </div>
     <div class="pill" id="pill">
       <div class="pill-dot"></div>
@@ -644,7 +644,9 @@ function addMsg(role, text) {
   const content = String(text || '').trim();
   if (!content) return;
   clearUserInterim();
-  clearAgentInterim();
+  // Only clear agent-interim when committing an agent message.
+  // For user messages the agent may still be mid-response — leave it.
+  if (role !== 'user') clearAgentInterim();
   removeTyping();
   hideEmptyState();
   const node = document.createElement('div');
@@ -979,6 +981,14 @@ function handleServerEvent(message) {
       setAppState('listening');
       break;
     case 'user-stopped-speaking':
+      // User has finished speaking — stay in listening while waiting for bot response
+      // (typing dots will appear when user-transcription-final fires)
+      break;
+    case 'interruption':
+      // User interrupted the bot — clear agent bubble immediately, go to listening
+      clearAgentInterim();
+      removeTyping();
+      setAppState('listening');
       break;
     case 'user-transcription': {
       const text = normalizeTranscriptText(message.data?.text || '');
@@ -990,7 +1000,10 @@ function handleServerEvent(message) {
           lastUserTranscript = finalText;
           addMsg('user', finalText);
         }
-        showTyping();
+        // Only show typing dots if bot hasn't started responding yet.
+        // In native-audio mode the bot usually starts speaking before
+        // user-transcription-final arrives, so dots are rarely needed.
+        if (!el('agent-interim') && !el('typing')) showTyping();
       } else {
         showUserInterim(text);
       }
@@ -999,8 +1012,9 @@ function handleServerEvent(message) {
     case 'bot-started-speaking':
       commitCurrentAgentMessage();
       removeTyping();
-      clearUserInterim();
-      clearAgentInterim();
+      // Do NOT clear user-interim here — the user's in-progress text stays
+      // visible until user-transcription-final commits it at turn_complete.
+      clearAgentInterim();  // Clear any stale agent-interim from previous turn
       botSpeechStartedAt = performance.now();
       serverUiCaptured = false;
       if (botAudioReadyAt !== null) {
@@ -1024,6 +1038,8 @@ function handleServerEvent(message) {
       const final = message.data?.final ?? true;
       if (final) {
         upsertAgentFinal(text);
+      } else {
+        showAgentInterim(text);
       }
       break;
     }
