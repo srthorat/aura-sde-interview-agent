@@ -186,7 +186,7 @@ resource "google_cloudbuild_trigger" "aura_deploy" {
   location    = "global"
 
   github {
-    owner = "your-github-org"   # Update before applying
+    owner = "srthorat"
     name  = "aura-sde-interview-agent"
     push {
       branch = "^main$"
