@@ -15,4 +15,21 @@ export default defineConfig({
       },
     },
   },
+  test: {
+    environment: "jsdom",
+    globals: true,
+    setupFiles: "./src/test/setup.ts",
+    exclude: ["e2e/**", "node_modules/**", "dist/**"],
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "html"],
+      include: ["src/App.tsx", "src/main.tsx"],
+      thresholds: {
+        lines: 100,
+        functions: 100,
+        branches: 100,
+        statements: 100,
+      },
+    },
+  },
 });

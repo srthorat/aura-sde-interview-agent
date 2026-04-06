@@ -14,6 +14,7 @@ custom_domain        = "aura.veloxpro.in"
 
 # Optional overrides
 # gemini_live_model       = "gemini-live-2.5-flash-native-audio"
+# gemini_text_model       = "gemini-2.5-flash"
 # gemini_voice            = "Aoede"
 # cloud_run_min_instances = 1   # 1 = always warm, 0 = scale to zero
 # cloud_run_max_instances = 10

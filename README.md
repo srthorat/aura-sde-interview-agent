@@ -20,7 +20,7 @@ Aura is a real-time AI-powered Google SDE interview coach built on the **Google 
 ```
 Browser mic → LiveKit WebRTC → PCM16 @ 16 kHz
                                     ↓
-                              RNNoise filter          ← bot/audio/rnnoise.py
+           Silero VAD (UI-only hints)     ← bot/audio/silero_vad.py
                                     ↓
                          Gemini Live (Vertex AI)      ← server-side VAD
                          gemini-live-2.5-flash-native-audio
@@ -28,9 +28,11 @@ Browser mic → LiveKit WebRTC → PCM16 @ 16 kHz
 Browser speaker ← LiveKit WebRTC ← PCM16 @ 24 kHz ← Gemini audio response
 ```
 
-### VAD strategy — server-side only
+### VAD strategy — Gemini server-side turn detection + local UI hints
 
-Aura uses **Gemini's built-in server-side VAD** exclusively. Client-side VAD libraries (Silero, SmartTurn) were evaluated and removed. Server VAD is configured via `RealtimeInputConfig`:
+Aura uses **Gemini's built-in server-side VAD** for actual turn detection and interruption semantics. A lightweight local **Silero VAD** is still used only for fast UI speaking indicators and STS timing, not for deciding when Gemini should end a turn. SmartTurn and RNNoise are not part of the active runtime path.
+
+Server VAD is configured via `RealtimeInputConfig`:
 
 | Parameter | Value | Effect |
 |---|---|---|
@@ -44,15 +46,13 @@ Aura uses **Gemini's built-in server-side VAD** exclusively. Client-side VAD lib
 | Approach | End-of-speech → first audio byte | Notes |
 |---|---|---|
 | **Server VAD (current)** | **~150–300 ms** | VAD runs inside Gemini's inference pipeline; no round-trip penalty |
-| Client Silero + SmartTurn (removed) | ~900–1 400 ms | 700 ms Silero window + SmartTurn re-arm + network RTT for each decision |
+| Client Silero + SmartTurn turn control (removed) | ~900–1 400 ms | Too much local buffering + re-arm latency for primary turn detection |
 | Pure silence threshold (no VAD) | ~300–500 ms | Simple but clips fast speakers; misses barge-in |
 
 **Server VAD wins on latency** because:
 - VAD judgment happens inside the same process as the LLM — no extra network hop
 - Barge-in (interruption) is handled natively without any muting gate on the send path
 - `silence_duration_ms=800` is the only mandatory wait; the 150 ms figure applies when the model starts generating immediately after speech ends
-
-**RNNoise cost**: ~0.3 ms per 10 ms frame on a single CPU core — fully negligible.
 
 Full diagram and design decisions: see [Architecture](#architecture) section above.
 
@@ -100,8 +100,11 @@ GOOGLE_CLOUD_LOCATION=us-central1
 ### 3. Run the backend
 
 ```bash
+# Optional: use a non-default port for local work
+# export PORT=7863
+
 uv run python -m bot.bot
-# Listening on http://localhost:7862
+# Listening on http://localhost:${PORT:-7862}
 ```
 
 ### 4. Run the frontend (separate terminal)
@@ -116,17 +119,56 @@ npm run dev
 
 Open `http://localhost:3000`, enter a User ID (1–10), click **Connect**, and speak.
 
-### 5. Single-container run (Docker)
+### 5. Build the frontend for the backend-served app
+
+The FastAPI app serves static files from `frontend/dist`. For the integrated app on the backend port, build the frontend first:
+
+```bash
+cd frontend
+nvm use
+npm install
+npm run build
+```
+
+Then run the backend and open `http://localhost:${PORT:-7862}`.
+
+### 6. Single-container run (Docker)
 
 ```bash
 cp .env.example .env   # fill in values
 
+# Optional local override
+# echo 'PORT=7863' >> .env
+
 docker compose up --build -d
 docker compose ps
-curl http://localhost:7862/health
+curl http://localhost:${PORT:-7862}/health
 ```
 
-Open `http://localhost:7862`.
+Open `http://localhost:${PORT:-7862}`.
+
+### Local setup used in this repo right now
+
+If you want the same flow we are using during development:
+
+```bash
+cp .env.example .env
+
+# Edit .env and set your real LiveKit / Google values.
+# If you want the backend on 7863 instead of 7862:
+# PORT=7863
+
+cd frontend
+nvm use
+npm install
+npm run build
+
+cd ..
+uv sync
+uv run python -m bot.bot
+```
+
+Open `http://localhost:7863` if `PORT=7863`, otherwise `http://localhost:7862`.
 
 ---
 
@@ -164,7 +206,7 @@ terraform apply
 2. Pushes `:<commit-sha>` and `:latest` to Artifact Registry
 3. Rolls out the new image to Cloud Run
 
-To enable the trigger, update the `github.owner` and `github.name` values in `infra/main.tf` before running `terraform apply`.
+To enable the trigger, update the `github.owner` value in `infra/main.tf` before running `terraform apply`.
 
 ---
 
@@ -181,6 +223,7 @@ See [`.env.example`](.env.example) for the full list with descriptions. Key vari
 | `GOOGLE_CLOUD_LOCATION` | — | GCP region (default: `us-central1`) |
 | `GOOGLE_API_KEY` | ✓* | Google AI Studio key (preview path only) |
 | `GEMINI_LIVE_MODEL` | — | Model name (default: `gemini-live-2.5-flash-native-audio`) |
+| `GEMINI_TEXT_MODEL` | — | Text-only grading/summary model (default: `gemini-2.5-flash`) |
 | `GEMINI_VOICE` | — | Voice name (default: `Aoede`) |
 | `USER_IDLE_TIMEOUT_SECS` | — | Idle silence timeout (default: `120`) |
 | `MAX_CALL_DURATION_SECS` | — | Hard call limit in seconds (default: `840`) |
@@ -196,12 +239,15 @@ See [`.env.example`](.env.example) for the full list with descriptions. Key vari
 │   ├── agent.py              # ADK LlmAgent, tool registry, LIVE_TOOL_DECLARATIONS
 │   ├── bot.py                # FastAPI app — /livekit/session, /health
 │   ├── audio/
-│   │   └── rnnoise.py        # RNNoise noise suppression wrapper (pyrnnoise)
+│   │   ├── silero_vad.py     # Local UI-only speaking detector
+│   │   ├── silero_vad.onnx   # Bundled Silero model artifact required at runtime
+│   │   └── smart_turn.py     # Deprecated placeholder kept for historical context
 │   ├── pipelines/
 │   │   └── voice.py          # AuraVoiceSession — LiveKit ↔ Gemini Live bridge
 │   ├── processors/
 │   │   └── session_timer.py  # Call duration utility
 │   └── prompts/
+│       ├── grading_rubric.md # Rubric used by post-call grading
 │       └── system_prompt.md  # Aura persona and interview guidelines
 ├── frontend/
 │   ├── public/demo.html      # Voice UI (real-time transcript + metrics)
@@ -357,11 +403,15 @@ gcloud compute firewall-rules create allow-http-https \
 gcloud compute ssh aura-vm --zone=us-central1-a
 
 # On the VM:
-git clone https://github.com/your-org/velox-voice-ai-agent.git
-cd velox-voice-ai-agent/solution4
+git clone https://github.com/your-org/aura-sde-interview-agent.git
+cd aura-sde-interview-agent
 cp .env.example .env   # fill in values
+
+# Optional: if you want Aura on 7863 behind Caddy instead of the default 7862
+# echo 'PORT=7863' >> .env
+
 docker compose up --build -d
-curl http://127.0.0.1:7862/health   # verify
+curl http://127.0.0.1:${PORT:-7862}/health   # verify
 ```
 
 #### 4. Install Caddy and configure HTTPS
@@ -370,7 +420,9 @@ curl http://127.0.0.1:7862/health   # verify
 # On the VM:
 apt-get install -y caddy
 cp deploy/caddy/Caddyfile.example /etc/caddy/Caddyfile
-# Edit /etc/caddy/Caddyfile — replace aura.example.com with your real domain
+# Edit /etc/caddy/Caddyfile:
+# - replace aura.example.com with your real domain
+# - if PORT is not 7862, also change 127.0.0.1:7862 to your chosen port
 systemctl enable --now caddy
 ```
 
@@ -381,7 +433,8 @@ systemctl enable --now caddy
    ```
 
 Key points:
-- Aura listens on port `7862`; Caddy terminates TLS on `443` and proxies to `127.0.0.1:7862`
+- VM deployment is Docker plus Caddy: Docker runs the Aura container, Caddy terminates TLS on `443` and proxies to the local Aura port
+- Aura listens on port `7862` by default; if you set `PORT=7863`, update both `docker compose` and the Caddy upstream to `127.0.0.1:7863`
 - The Caddyfile includes a `keepalive` transport directive to keep LiveKit WebSocket signalling alive
 - Caddy auto-renews Let's Encrypt certificates — no manual cert management needed
 

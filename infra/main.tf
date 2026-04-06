@@ -113,6 +113,10 @@ resource "google_cloud_run_v2_service" "aura" {
         value = var.gemini_live_model
       }
       env {
+        name  = "GEMINI_TEXT_MODEL"
+        value = var.gemini_text_model
+      }
+      env {
         name  = "GEMINI_VOICE"
         value = var.gemini_voice
       }
@@ -173,7 +177,7 @@ resource "google_cloud_run_v2_service_iam_member" "public" {
 }
 
 # ── Cloud Build trigger ───────────────────────────────────────────────────────
-# The trigger watches the solution4/ folder on the main branch.
+# The trigger watches the repo root on the main branch.
 # It builds the Docker image and deploys it to Cloud Run automatically.
 resource "google_cloudbuild_trigger" "aura_deploy" {
   project     = var.project_id
@@ -183,15 +187,15 @@ resource "google_cloudbuild_trigger" "aura_deploy" {
 
   github {
     owner = "your-github-org"   # Update before applying
-    name  = "velox-voice-ai-agent"
+    name  = "aura-sde-interview-agent"
     push {
       branch = "^main$"
     }
   }
 
-  included_files = ["solution4/**"]
+  included_files = ["**"]
 
-  filename   = "solution4/cloudbuild.yaml"
+  filename   = "cloudbuild.yaml"
   depends_on = [google_project_service.apis]
 }
 

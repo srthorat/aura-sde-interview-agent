@@ -68,9 +68,9 @@ Aura is a real-time AI-powered Google SDE interview coach. It hears your voice w
 
 ## 🔲 Phase 4: Enhancements
 
-- [ ] Add Round 4 debrief logic — auto-detect weak spots from `record_answer_note` history
+- [x] Add Round 4 debrief logic — debrief question bank and prompt flow are present
 - [ ] Scoring rubric per round (1–4 scale, spoken at end of each round)
 - [ ] Candidate progress dashboard in frontend (rounds completed, scores over time)
 - [ ] Support for custom question sets via environment config
-- [ ] Add architecture diagram to README
+- [x] Add architecture diagram to README
 

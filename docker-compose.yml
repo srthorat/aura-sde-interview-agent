@@ -7,4 +7,4 @@ services:
     env_file:
       - .env
     ports:
-      - "7862:7862"
+      - "${PORT:-7862}:${PORT:-7862}"

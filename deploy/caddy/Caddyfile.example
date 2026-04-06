@@ -17,8 +17,8 @@
 #      # or, if already running:
 #      sudo systemctl reload caddy
 #
-# The Aura container is expected to be running on 127.0.0.1:7862
-# (set PORT=7862 in .env, or override with the PORT env var)
+# The Aura container is expected to be running on 127.0.0.1:7862 by default.
+# If you change PORT in .env, update the reverse_proxy target below to match.
 
 aura.example.com {
     encode gzip

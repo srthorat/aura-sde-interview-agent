@@ -5,17 +5,24 @@ __pycache__/
 .venv/
 venv/
 .env
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
 
 # Node / Frontend
 node_modules/
 dist/
 .cache/
+frontend/coverage/
+frontend/test-results/
+frontend/.vite/
+npm-debug.log*
 
 # Terraform
 infra/.terraform/
 infra/*.tfstate
 infra/*.tfstate.backup
-infra/.terraform.lock.hcl
 infra/terraform.tfvars
 
 # Misc

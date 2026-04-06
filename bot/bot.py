@@ -34,7 +34,7 @@ from livekit import api
 from loguru import logger
 from pydantic import BaseModel, Field
 
-from bot.pipelines.voice import AuraRoomConfig, build_room_config, run_room_bot
+from bot.pipelines.voice import AuraRoomConfig, build_room_config, run_room_bot, _get_session_service
 
 load_dotenv()
 
@@ -236,6 +236,46 @@ async def health() -> dict[str, Any]:
         "model": os.getenv("GEMINI_LIVE_MODEL", "gemini-live-2.5-flash-native-audio"),
         "active_rooms": active_room_count,
     }
+
+
+@app.get("/api/summary/{room_name}")
+async def get_room_summary(room_name: str) -> dict[str, Any]:
+    """HTTP fallback for call-summary when the data channel closed before delivery."""
+    from bot.pipelines.voice import _room_summaries
+    data = _room_summaries.pop(room_name, None)
+    if data is None:
+        return {"status": "pending"}
+    return {"status": "ready", "data": data}
+
+
+@app.get("/api/candidate/check")
+async def check_candidate(user_id: str = "") -> dict[str, Any]:
+    """Check whether a candidate ID has existing session history.
+
+    Returns:
+        exists:  True if prior sessions found
+        rounds:  Count of prior sessions (proxy for rounds completed)
+        user_id: Echoed back (sanitised)
+    """
+    uid = user_id.strip().lower()[:64]
+    if not uid or uid == "anonymous":
+        return {"exists": False, "rounds": 0, "user_id": uid}
+
+    try:
+        svc = _get_session_service()
+        engine_id = os.environ.get("VERTEX_AI_REASONING_ENGINE_ID", "").strip()
+        project   = os.environ.get("GOOGLE_CLOUD_PROJECT_ID", "")
+        location  = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+        if engine_id and project:
+            app_name = f"projects/{project}/locations/{location}/reasoningEngines/{engine_id}"
+        else:
+            app_name = "aura"
+        result = await svc.list_sessions(app_name=app_name, user_id=uid)
+        sessions = getattr(result, "sessions", []) or []
+        return {"exists": len(sessions) > 0, "rounds": len(sessions), "user_id": uid}
+    except Exception as exc:
+        logger.debug(f"[candidate/check] lookup failed for {uid!r}: {exc}")
+        return {"exists": False, "rounds": 0, "user_id": uid}
 
 
 # ---------------------------------------------------------------------------

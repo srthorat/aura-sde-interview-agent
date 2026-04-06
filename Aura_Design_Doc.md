@@ -32,6 +32,7 @@
 │  │       ▼                                                           │   │
 │  │  _send_audio_loop ──────────────────────────────────────────────► │   │
 │  │       │                           google-genai aio.live           │   │
+│  │       ├─ Silero VAD (UI hints only)                              │   │
 │  │       │                           ┌──────────────────────────┐   │   │
 │  │       └──────────────────────────►│  Gemini Live session      │   │   │
 │  │                                   │  gemini-live-2.5-flash    │   │   │
@@ -76,9 +77,11 @@
 ### 2. Gemini Live native audio via `google-genai`
 
 `genai.aio.live.connect()` opens a bidirectional gRPC stream directly to Gemini Live on Vertex AI. This gives:
-- Server-side voice activity detection (no client-side Silero/WebRTC VAD needed)
+- Server-side voice activity detection for actual turn control
 - Native barge-in / interruption handling
 - Sub-300 ms first-audio-output latency
+
+Silero remains in the backend only for faster UI speaking indicators and STS timing. It does not decide turn boundaries for Gemini.
 
 Audio flows: **Browser mic → LiveKit WebRTC → PCM16 @ 16 kHz → Gemini Live → PCM16 @ 24 kHz → LiveKit → Browser speaker**
 

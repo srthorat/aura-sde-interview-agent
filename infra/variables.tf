@@ -32,6 +32,12 @@ variable "gemini_live_model" {
   default     = "gemini-live-2.5-flash-native-audio"
 }
 
+variable "gemini_text_model" {
+  description = "Gemini text model used for grading and narrative summaries"
+  type        = string
+  default     = "gemini-2.5-flash"
+}
+
 variable "gemini_voice" {
   description = "Gemini voice name for audio responses"
   type        = string
