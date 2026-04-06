@@ -6,5 +6,7 @@ services:
     restart: always
     env_file:
       - .env
+    volumes:
+      - "${GOOGLE_VERTEX_CREDENTIALS_PATH}:${GOOGLE_VERTEX_CREDENTIALS_PATH}:ro"
     ports:
       - "${PORT:-7862}:${PORT:-7862}"

@@ -208,6 +208,8 @@ terraform apply
 
 To enable the trigger, update the `github.owner` value in `infra/main.tf` before running `terraform apply`.
 
+For the full operational runbook, see [OPERATION_MANAGE.md](OPERATION_MANAGE.md).
+
 ---
 
 ## Environment Variables
