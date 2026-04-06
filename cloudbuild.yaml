@@ -1,7 +1,7 @@
 steps:
-  # ── 1. Build the Docker image and push to Artifact Registry ───────────────
+  # ── 1. Build the Docker image locally in the build worker ─────────────────
   - name: 'gcr.io/cloud-builders/docker'
-    id: build-push
+    id: build
     args:
       - build
       - --tag
@@ -13,7 +13,25 @@ steps:
       - .
     dir: '.'
 
-  # ── 2. Deploy to Cloud Run ─────────────────────────────────────────────────
+  # ── 2. Push the revision image so Cloud Run can deploy it ─────────────────
+  - name: 'gcr.io/cloud-builders/docker'
+    id: push-commit
+    args:
+      - push
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/aura/aura-backend:$COMMIT_SHA'
+    waitFor:
+      - build
+
+  # ── 3. Update latest after the revision image exists in the registry ──────
+  - name: 'gcr.io/cloud-builders/docker'
+    id: push-latest
+    args:
+      - push
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/aura/aura-backend:latest'
+    waitFor:
+      - build
+
+  # ── 4. Deploy to Cloud Run ─────────────────────────────────────────────────
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: deploy
     entrypoint: gcloud
@@ -26,7 +44,7 @@ steps:
       - --region=${_REGION}
       - --quiet
     waitFor:
-      - build-push
+      - push-commit
 
 substitutions:
   _REGION: us-central1
