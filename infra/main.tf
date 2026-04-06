@@ -54,14 +54,18 @@ resource "google_project_iam_member" "aura_secret_accessor" {
 resource "google_secret_manager_secret" "livekit_api_key" {
   project   = var.project_id
   secret_id = "aura-livekit-api-key"
-  replication { auto {} }
+  replication {
+    auto {}
+  }
   depends_on = [google_project_service.apis]
 }
 
 resource "google_secret_manager_secret" "livekit_api_secret" {
   project   = var.project_id
   secret_id = "aura-livekit-api-secret"
-  replication { auto {} }
+  replication {
+    auto {}
+  }
   depends_on = [google_project_service.apis]
 }
 
@@ -120,10 +124,6 @@ resource "google_cloud_run_v2_service" "aura" {
         name  = "GEMINI_VOICE"
         value = var.gemini_voice
       }
-      env {
-        name  = "PORT"
-        value = "7862"
-      }
 
       # ── Secret env vars ────────────────────────────────────────────────────
       env {
@@ -181,9 +181,10 @@ resource "google_cloud_run_v2_service_iam_member" "public" {
 # It builds the Docker image and deploys it to Cloud Run automatically.
 resource "google_cloudbuild_trigger" "aura_deploy" {
   project     = var.project_id
-  name        = "aura-deploy-on-push"
-  description = "Build and deploy Aura on push to main"
+  name        = "trigger-aura-deploy"
+  description = "Auto trigger Aura Deployment"
   location    = "global"
+  service_account = "projects/${var.project_id}/serviceAccounts/aura-deploy@${var.project_id}.iam.gserviceaccount.com"
 
   github {
     owner = "srthorat"
@@ -192,8 +193,6 @@ resource "google_cloudbuild_trigger" "aura_deploy" {
       branch = "^main$"
     }
   }
-
-  included_files = ["**"]
 
   filename   = "cloudbuild.yaml"
   depends_on = [google_project_service.apis]
