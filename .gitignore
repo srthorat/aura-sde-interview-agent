@@ -31,3 +31,5 @@ infra/terraform.tfvars
 *.log
 *.code-workspace
 SESSION_SUMMARY_*.md
+docs/*.pptx
+docs/generate_slides.py

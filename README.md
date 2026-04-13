@@ -59,14 +59,12 @@ Browser speaker ← LiveKit WebRTC ← PCM16 @ 24 kHz ← Gemini audio response
 
 Aura uses **Gemini's built-in server-side VAD** for actual turn detection and interruption semantics. A lightweight local **Silero VAD** is still used only for fast UI speaking indicators and STS timing, not for deciding when Gemini should end a turn. SmartTurn and RNNoise are not part of the active runtime path.
 
-Server VAD is configured via `RealtimeInputConfig`:
+Server VAD is configured via `RealtimeInputConfig` → `AutomaticActivityDetection`:
 
 | Parameter | Value | Effect |
 |---|---|---|
-| `start_of_speech_sensitivity` | `START_SENSITIVITY_LOW` | Requires confident speech onset — ignores faint background noise |
-| `end_of_speech_sensitivity` | `END_SENSITIVITY_LOW` | Waits longer before cutting off — reduces clipping on slow speakers |
-| `prefix_padding_ms` | `300` (env: `VAD_PREFIX_PADDING_MS`) | Includes 300 ms of audio before speech start — captures leading consonants |
-| `silence_duration_ms` | `800` (env: `VAD_SILENCE_DURATION_MS`) | 800 ms of silence to end a turn — balances latency vs. false cut-offs |
+| `silence_duration_ms` | `600` | 600 ms of silence ends a turn — balanced: fast response without premature cuts |
+| `prefix_padding_ms` | `200` | Includes 200 ms of audio before speech start — captures leading consonants |
 
 ### Latency analysis
 
@@ -358,12 +356,11 @@ What is already covered in this repo:
 
 What still needs to be prepared for submission:
 1. A short demo video under 4 minutes.
-2. A proof-of-Google-Cloud-deployment artifact for judges:
-  either a short screen recording of Cloud Run / Cloud Build in GCP, or explicit links to files such as [infra/main.tf](infra/main.tf), [cloudbuild.yaml](cloudbuild.yaml), and [bot/pipelines/voice.py](bot/pipelines/voice.py).
-3. Final submission text describing features, technologies used, and key learnings. A draft is included in [docs/SUBMISSION_DRAFT.md](docs/SUBMISSION_DRAFT.md).
 
-Optional, not required for submission:
-1. A rendered architecture image for easier judge review.
+Already completed:
+- GCP deployment proof: embedded as animated GIF in the [CI/CD](#cicd) section above, showing Cloud Build SUCCESS + Artifact Registry image tagged with the commit SHA + Cloud Run Ready: True.
+- Architecture diagram: embedded in the [Architecture](#architecture) section.
+- Submission text: [docs/SUBMISSION_DRAFT.md](docs/SUBMISSION_DRAFT.md).
 
 For the final implementation architecture, see [docs/Aura_Design_Doc.md](docs/Aura_Design_Doc.md).
 
@@ -408,8 +405,13 @@ See [`.env.example`](.env.example) for the full list with descriptions. Key vari
 │   ├── processors/
 │   │   └── session_timer.py  # Call duration utility
 │   └── prompts/
-│       ├── grading_rubric.md # Rubric used by post-call grading
-│       └── system_prompt.md  # Aura persona and interview guidelines
+│       ├── grading_rubric.md             # Rubric used by post-call grading
+│       ├── system_prompt.md              # Base persona (fallback)
+│       ├── system_prompt_anon.md         # Anonymous user variant
+│       ├── system_prompt_named_fast.md   # Named user — fast-start variant
+│       ├── prompt_greeting_anon.md       # Opening greeting for anon users
+│       ├── prompt_greeting_named.md      # Opening greeting for named users
+│       └── prompt_round_*.md             # Per-round instruction overlays (8 files)
 ├── frontend/
 │   ├── public/demo.html      # Voice UI (real-time transcript, metrics, summary, progress)
 │   └── src/App.tsx           # Vite/React wrapper
@@ -424,6 +426,104 @@ See [`.env.example`](.env.example) for the full list with descriptions. Key vari
 ├── pyproject.toml            # Python dependencies (uv)
 └── .env.example              # All environment variables documented
 ```
+
+---
+
+## Tech Stack — Components, Roles & Why We Chose Them
+
+### LiveKit — WebRTC Transport Layer
+
+**What it does:** LiveKit is a self-hostable WebRTC SFU (Selective Forwarding Unit) that manages real-time audio/video rooms. In Aura it provides the bi-directional audio channel between the browser microphone and the Cloud Run backend, plus a server-side data channel for structured events (transcript, grades, call summary).
+
+**Why LiveKit over raw WebRTC or other transports:**
+
+| Concern | Raw WebRTC | LiveKit |
+|---|---|---|
+| NAT traversal / TURN | Manual STUN/TURN setup | Built-in, fully managed |
+| Server-side audio access | Impossible without media server | `rtc.AudioStream` gives PCM frames directly in Python |
+| Participant signalling | Custom protocol required | SDK handles join/leave/reconnect |
+| Data channel | Unreliable ordering without SCTP work | `room.local_participant.publish_data()` — reliable ordered delivery |
+| Scalability | Point-to-point only | SFU routes audio; scales to many participants |
+| Python SDK | None official | `livekit` + `livekit-api` packages — first-class async support |
+
+**Key integration points in Aura:**
+- `rtc.AudioStream(track)` — pulls incoming browser mic PCM16 @ 16 kHz frame-by-frame
+- `rtc.AudioSource(GEMINI_OUTPUT_SAMPLE_RATE, GEMINI_OUTPUT_CHANNELS)` — pushes Gemini audio output back to browser
+- `room.local_participant.publish_data(payload, reliable=True)` — sends transcript lines, grade chips, and call summary JSON to the UI without a separate WebSocket
+- `rtc.RoomEvent` — drives session lifecycle (participant join/leave triggers session start/teardown)
+- `livekit-api` + `api.AccessToken` — backend mints short-lived JWT tokens per session; no credentials exposed to browser
+
+---
+
+### Google ADK (`google-adk`) — Agent Orchestration
+
+**What it does:** ADK (`LlmAgent`, `Runner`, `VertexAiSessionService`) wraps the Gemini Live bidi stream, handles tool dispatch, and manages session lifecycle. It eliminates writing a custom WebSocket loop for Gemini's `BidiGenerateContent` RPC.
+
+**Why ADK:**
+- Tool calls from Gemini Live are dispatched to Python functions automatically — no `if tool_name == "..."` switching
+- `VertexAiSessionService` persists the full conversation event history to Vertex AI Agent Engine natively
+- `RunConfig` gives a clean surface for configuring VAD, speech, modalities, and session resumption in one place
+- `LiveRequestQueue` decouples audio ingestion from the ADK event loop — audio can be enqueued from the LiveKit receive loop without blocking
+
+---
+
+### Gemini Live (`gemini-live-2.5-flash-native-audio`) — Voice Brain
+
+**What it does:** Native audio model that speaks, listens, detects turn ends, handles barge-in, and evaluates interview answers — all in one bidi stream.
+
+**Why native audio (not text-to-speech + text):**
+- Single round-trip: audio in → audio out in the same inference pass, no TTS post-step
+- Server-side VAD: turn detection runs inside the model pipeline, eliminating client-side buffering latency
+- `enable_affective_dialog=True`: Gemini modulates tone and pacing based on conversational context
+- STS latency 126–300 ms on conversational turns vs. 900–1400 ms with client Silero + SmartTurn
+
+---
+
+### Silero VAD (`silero_vad.onnx` + `onnxruntime`) — Local UI Hints
+
+**What it does:** A lightweight ONNX speech detection model that runs locally in-process on each 32 ms audio frame (512 samples @ 16 kHz).
+
+**Why a separate local VAD in addition to Gemini's server-side VAD:**
+- Server VAD fires after Gemini processes the audio — there is a ~80–150 ms delay before the UI knows the user is speaking
+- Silero fires immediately on the local audio frame, enabling instant "user speaking" UI indicators and barge-in queue clear without waiting for a Gemini event
+- ONNX runtime is single-threaded, CPU-only, < 5 MB — no GPU, no network, negligible latency
+
+---
+
+### FastAPI + Uvicorn — Backend HTTP/WebSocket Server
+
+**What it does:** Serves three surfaces:
+1. `POST /livekit/session` — mints LiveKit tokens, spawns the voice session task
+2. `GET /health` — Cloud Run health check
+3. Static file serving — `frontend/dist/` (built React app)
+
+**Why FastAPI:**
+- `async def` handlers integrate with the `asyncio` event loop used by LiveKit and ADK — no thread-pool overhead
+- Pydantic request/response models give automatic input validation and OpenAPI docs
+- Lifespan context manager handles pre-warm tasks cleanly at startup
+
+---
+
+### Vertex AI Agent Engine — Session Persistence
+
+**What it does:** Google-managed cloud storage for ADK session events. Each named candidate's history (questions asked, rubric grades, answer notes, round number) is persisted as ADK `Event` objects and survives container restarts, Cloud Run scale-out, and re-deployments.
+
+**Why Vertex AI Agent Engine over a database:**
+- Native ADK integration — `VertexAiSessionService` is a drop-in for `InMemorySessionService`
+- No schema migrations, no connection pool, no DB maintenance
+- Events are JSON-serialisable and readable without a custom SDK
+- Automatic IAM-gated access — no credential rotation needed
+
+---
+
+### Terraform + Cloud Build — Infrastructure as Code + CI/CD
+
+**What it does:** All GCP resources (Cloud Run service, Artifact Registry repo, Secret Manager secrets, IAM bindings, Cloud Build trigger, Vertex AI Reasoning Engine) are declared in `infra/main.tf`. Any push to `main` triggers `cloudbuild.yaml`: build → tag with commit SHA → push to Artifact Registry → roll out to Cloud Run.
+
+**Why Terraform over console clicks:**
+- Reproducible: `terraform apply` from a fresh project recreates the full stack in ~3 minutes
+- Auditable: every infra change is a Git commit
+- Cloud Build trigger is itself managed by Terraform — no manual console setup
 
 ---
 

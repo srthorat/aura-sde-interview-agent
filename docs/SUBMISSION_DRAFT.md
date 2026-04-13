@@ -83,7 +83,7 @@ FastAPI / LiveKit room bot (Cloud Run)
 
 ## External Services
 
-- **LiveKit** — WebRTC SFU for audio transport between browser and Cloud Run backend.
+- **LiveKit** — WebRTC SFU for bi-directional audio transport between browser and Cloud Run backend. Chosen for its Python SDK with native `rtc.AudioStream` / `rtc.AudioSource` API, built-in NAT traversal, reliable data channel for structured events (transcript, grades, call summary), and seamless session token model. No raw WebRTC or custom media server needed.
 - Interview questions are embedded in the application. No external data sources, training data, or proprietary datasets required.
 
 ---
