@@ -103,6 +103,7 @@ Aura now uses a larger tool surface during live audio:
 | `get_current_time` | Provides answer-timing signals to the candidate |
 | `get_interview_question` | Pulls a question by round + category from the built-in question bank |
 | `record_answer_note` | Saves a structured strength/weakness note to session memory |
+| `evaluate_candidate_answer` | Grades an answer across all 8 rubric categories in one call; also records the note |
 | `get_session_summary` | Returns a spoken performance summary across completed rounds |
 | `submit_rubric_grade` | Captures evidence-based rubric grades continuously during the interview |
 | `get_rubric_report` | Returns the rubric report used for end-of-round and end-of-call feedback |
@@ -155,7 +156,13 @@ ADK tool callbacks set per-session context before each tool call, so the live mo
 │   ├── processors/
 │   │   └── session_timer.py  # Call duration + idle timeout utility
 │   └── prompts/
-│       └── system_prompt.md  # Aura persona + Google SDE interview guidelines
+│       ├── system_prompt.md              # Base persona (fallback)
+│       ├── system_prompt_anon.md         # Anonymous user variant
+│       ├── system_prompt_named_fast.md   # Named user fast-start variant
+│       ├── prompt_greeting_anon.md       # Opening greeting for anon users
+│       ├── prompt_greeting_named.md      # Opening greeting for named users
+│       ├── grading_rubric.md             # Rubric definitions used by post-call grading
+│       └── prompt_round_*.md             # Per-round instruction overlays (8 files)
 ├── frontend/
 │   ├── public/demo.html      # Voice UI (LiveKit JS SDK, transcript + metrics)
 │   └── src/App.tsx           # Vite/React wrapper

@@ -57,7 +57,7 @@ Browser speaker ← LiveKit WebRTC ← PCM16 @ 24 kHz ← Gemini audio response
 
 ### VAD strategy — Gemini server-side turn detection + local UI hints
 
-Aura uses **Gemini's built-in server-side VAD** for actual turn detection and interruption semantics. A lightweight local **Silero VAD** is still used only for fast UI speaking indicators and STS timing, not for deciding when Gemini should end a turn. SmartTurn and RNNoise are not part of the active runtime path.
+Aura uses **Gemini's built-in server-side VAD** for actual turn detection and interruption semantics. A lightweight local **Silero VAD** is still used only for fast UI speaking indicators and STS timing, not for deciding when Gemini should end a turn.
 
 Server VAD is configured via `RealtimeInputConfig` → `AutomaticActivityDetection`:
 
@@ -71,7 +71,6 @@ Server VAD is configured via `RealtimeInputConfig` → `AutomaticActivityDetecti
 | Approach | End-of-speech → first audio byte | Notes |
 |---|---|---|
 | **Server VAD (current)** | **~150–300 ms** | VAD runs inside Gemini's inference pipeline; no round-trip penalty |
-| Client Silero + SmartTurn turn control (removed) | ~900–1 400 ms | Too much local buffering + re-arm latency for primary turn detection |
 | Pure silence threshold (no VAD) | ~300–500 ms | Simple but clips fast speakers; misses barge-in |
 
 **Server VAD wins on latency** because:

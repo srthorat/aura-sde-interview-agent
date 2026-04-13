@@ -7,7 +7,6 @@ It covers:
 - Connecting GitHub to Cloud Build in the GCP UI
 - Finishing CI/CD trigger setup with Terraform
 - Verifying builds, logs, triggers, and Cloud Run revisions
-- Custom domain setup with GoDaddy
 - Upgrade, stop, restart, and delete operations
 
 ## 1. Current Deployment State
@@ -288,71 +287,7 @@ curl -fsS https://aura-sde-interview-agent-ivhauk7c7a-uc.a.run.app/health
 curl -I -sS https://aura-sde-interview-agent-ivhauk7c7a-uc.a.run.app/ | head -n 5
 ```
 
-## 8. GoDaddy Custom Domain Setup
-
-This repo already has Terraform support for a custom domain fronted by a Global HTTPS Load Balancer.
-
-Current Terraform variables:
-- `enable_custom_domain`
-- `custom_domain`
-
-Current configured domain value:
-- `aura.veloxpro.in`
-
-### Step 1. Enable the custom domain in Terraform
-
-Edit [infra/terraform.tfvars](infra/terraform.tfvars):
-
-```hcl
-enable_custom_domain = true
-custom_domain        = "aura.veloxpro.in"
-```
-
-### Step 2. Apply Terraform
-
-```bash
-cd /home/ubuntu/velox/aura-sde-interview-agent/infra
-export GOOGLE_APPLICATION_CREDENTIALS=/home/ubuntu/.config/gcp/aura-deploy.json
-terraform apply -auto-approve
-```
-
-### Step 3. Get the load balancer IP
-
-```bash
-terraform output lb_ip
-```
-
-### Step 4. Add DNS in GoDaddy
-
-In GoDaddy:
-
-1. Open `My Products`.
-2. Open the DNS page for `veloxpro.in`.
-3. Add a new DNS record.
-4. Set:
-   - Type: `A`
-   - Name: `aura`
-   - Value: the IP from `terraform output lb_ip`
-   - TTL: default or `600`
-5. Save the record.
-
-### Step 5. Wait for certificate provisioning
-
-Google-managed certificate issuance usually takes several minutes after DNS propagates.
-
-Check status:
-
-```bash
-gcloud compute ssl-certificates describe aura-ssl-cert \
-  --global \
-  --project="$PROJECT_ID" \
-  --format='value(managed.status,managed.domainStatus)'
-```
-
-When active, open:
-- `https://aura.veloxpro.in`
-
-## 9. Day-2 Operations
+## 8. Day-2 Operations
 
 ### View Cloud Run service status
 
@@ -398,7 +333,7 @@ gcloud run services update-traffic aura-sde-interview-agent \
   --project="$PROJECT_ID"
 ```
 
-## 10. Upgrade Procedure
+## 9. Upgrade Procedure
 
 Use this when you want to deploy a new application version.
 
