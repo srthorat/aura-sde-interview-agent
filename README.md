@@ -363,8 +363,7 @@ What still needs to be prepared for submission:
 3. Final submission text describing features, technologies used, and key learnings. A draft is included in [docs/SUBMISSION_DRAFT.md](docs/SUBMISSION_DRAFT.md).
 
 Optional, not required for submission:
-1. Custom domain setup such as `aura.veloxpro.in`.
-2. A rendered architecture image for easier judge review.
+1. A rendered architecture image for easier judge review.
 
 For the final implementation architecture, see [docs/Aura_Design_Doc.md](docs/Aura_Design_Doc.md).
 
@@ -440,77 +439,6 @@ The same function is invoked whether the call comes from the ADK text runner or 
 
 ---
 
-## Custom Domain — aura.veloxpro.in
-
-Aura uses a **Global HTTPS Load Balancer** in front of Cloud Run, with a Google-managed SSL certificate. HTTPS is fully automatic — no Caddy, no manual certs.
-
-### Step 1 — Deploy the Cloud Run service first
-
-```bash
-cd infra
-cp terraform.tfvars.example terraform.tfvars   # fill in project_id + livekit_url
-./deploy.sh
-```
-
-### Step 2 — Provision the Load Balancer
-
-In `infra/terraform.tfvars` set:
-```hcl
-enable_custom_domain = true
-custom_domain        = "aura.veloxpro.in"
-```
-
-Then apply:
-```bash
-terraform apply
-```
-
-Get the static IP that was reserved:
-```bash
-terraform output lb_ip
-# e.g. 34.102.136.180
-```
-
-### Step 3 — Add DNS record in GoDaddy
-
-1. Log in to [GoDaddy](https://sso.godaddy.com) → **My Products** → `veloxpro.in` → **DNS**
-2. Click **Add New Record**
-3. Fill in:
-
-   | Field | Value |
-   |---|---|
-   | Type | `A` |
-   | Name | `aura` |
-   | Value | *(the IP from `terraform output lb_ip`)* |
-   | TTL | 600 (or default) |
-
-4. Click **Save**
-
-### Step 4 — Wait for certificate provisioning
-
-Google automatically provisions a managed TLS cert for `aura.veloxpro.in` once DNS resolves correctly. This takes **10–20 minutes** after the DNS record propagates.
-
-Check the status:
-```bash
-gcloud compute ssl-certificates describe aura-ssl-cert \
-  --global --project=YOUR_PROJECT_ID \
-  --format='value(managed.status, managed.domainStatus)'
-# ACTIVE means the cert is live
-```
-
-### Step 5 — Verify
-
-```bash
-curl https://aura.veloxpro.in/health
-# {"status":"ok","bot":"Aura",...}
-```
-
-Open `https://aura.veloxpro.in` in a browser — the mic permission prompt should appear.
-
-> **HTTP → HTTPS redirect** is included automatically. Any request to `http://aura.veloxpro.in` is redirected 301 to `https://`.
-
----
-
 ## HTTPS Deployment Options
 
 Browser microphone access requires HTTPS on any public URL. Two GCP paths:
@@ -525,8 +453,6 @@ cd infra && ./deploy.sh
 ```
 
 Your service is immediately available at `https://aura-voice-agent-<hash>-uc.a.run.app`.
-
-To use a **custom domain**: in Cloud Run console → *Domain mappings* → add your domain. Google provisions and renews the certificate automatically.
 
 ---
 
