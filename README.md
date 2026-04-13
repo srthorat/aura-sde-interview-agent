@@ -341,6 +341,10 @@ terraform apply
 
 The trigger is now configured and managed through Terraform in [infra/main.tf](infra/main.tf), using the `aura-deploy` service account.
 
+#### Live Deployment Proof
+
+![GCP Deployment Proof](docs/gcp-deployment-proof.gif)
+
 For the full operational runbook, see [docs/OPERATION_MANAGE.md](docs/OPERATION_MANAGE.md).
 
 ### Hackathon Requirement Check
