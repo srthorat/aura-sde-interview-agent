@@ -9,13 +9,16 @@
 #   - gcloud CLI authenticated: gcloud auth application-default login
 #   - Terraform >= 1.7 installed
 #   - docker CLI installed (for initial image push if trigger isn't set up yet)
+#   - Python 3 with vertexai SDK (uv run used automatically if uv is available)
 #
 # What this script does:
 #   1. Enables required GCP APIs
-#   2. Creates Artifact Registry, Cloud Run service, IAM, Secret Manager secrets
-#   3. Builds and pushes the Docker image to Artifact Registry
-#   4. Deploys to Cloud Run
-#   5. Prints the live service URL
+#   2. Creates a GCS staging bucket if needed
+#   3. Creates the Vertex AI Reasoning Engine for session persistence (idempotent)
+#   4. Creates Artifact Registry, Cloud Run service, IAM, Secret Manager secrets
+#   5. Builds and pushes the Docker image to Artifact Registry
+#   6. Deploys to Cloud Run
+#   7. Prints the live service URL
 # ─────────────────────────────────────────────────────────────────────────────
 
 set -euo pipefail
@@ -33,8 +36,76 @@ fi
 PROJECT_ID=$(grep '^project_id' "${SCRIPT_DIR}/terraform.tfvars" | awk -F'"' '{print $2}')
 REGION=$(grep '^region' "${SCRIPT_DIR}/terraform.tfvars" | awk -F'"' '{print $2}')
 REGION=${REGION:-us-central1}
+GCS_STAGING=$(grep '^gcs_staging_bucket' "${SCRIPT_DIR}/terraform.tfvars" | awk -F'"' '{print $2}')
+GCS_STAGING=${GCS_STAGING:-aura-staging-${PROJECT_ID:0:8}}
 
 echo "==> Project: ${PROJECT_ID}  Region: ${REGION}"
+
+# ── Enable required GCP APIs first (idempotent) ───────────────────────────────
+echo ""
+echo "==> Enabling required GCP APIs..."
+gcloud services enable \
+  run.googleapis.com \
+  cloudbuild.googleapis.com \
+  artifactregistry.googleapis.com \
+  aiplatform.googleapis.com \
+  secretmanager.googleapis.com \
+  iam.googleapis.com \
+  compute.googleapis.com \
+  storage.googleapis.com \
+  certificatemanager.googleapis.com \
+  --project="${PROJECT_ID}" --quiet
+echo "  APIs enabled."
+
+# ── Ensure GCS staging bucket exists (needed for Reasoning Engine creation) ──
+echo ""
+echo "==> Ensuring GCS staging bucket: gs://${GCS_STAGING}"
+if gsutil ls -b "gs://${GCS_STAGING}" > /dev/null 2>&1; then
+  echo "  Bucket already exists."
+else
+  gsutil mb -p "${PROJECT_ID}" -l "${REGION}" "gs://${GCS_STAGING}"
+  echo "  Bucket created."
+fi
+
+# ── Create / retrieve Vertex AI Reasoning Engine (idempotent) ────────────────
+echo ""
+echo "==> Vertex AI Reasoning Engine (session persistence)"
+
+# Check if already set in tfvars (non-empty value)
+EXISTING_ENGINE_ID=$(grep '^reasoning_engine_id' "${SCRIPT_DIR}/terraform.tfvars" 2>/dev/null | awk -F'"' '{print $2}' | tr -d '[:space:]')
+
+if [[ -n "${EXISTING_ENGINE_ID}" ]]; then
+  echo "  Using existing engine ID from terraform.tfvars: ${EXISTING_ENGINE_ID}"
+  REASONING_ENGINE_ID="${EXISTING_ENGINE_ID}"
+else
+  echo "  reasoning_engine_id not set in terraform.tfvars — creating/finding engine..."
+  PYTHON_CMD="python3"
+  if command -v uv &> /dev/null; then
+    PYTHON_CMD="uv run python"
+  fi
+
+  REASONING_ENGINE_ID=$(cd "${APP_DIR}" && ${PYTHON_CMD} "${SCRIPT_DIR}/create_reasoning_engine.py" \
+    --project "${PROJECT_ID}" \
+    --location "${REGION}" \
+    --staging-bucket "gs://${GCS_STAGING}" \
+    --display-name "aura-sessions")
+
+  if [[ -z "${REASONING_ENGINE_ID}" ]]; then
+    echo "  ERROR: Failed to create Reasoning Engine. Aborting."
+    exit 1
+  fi
+
+  echo "  Engine ID: ${REASONING_ENGINE_ID}"
+  # Persist into terraform.tfvars so subsequent runs skip creation
+  if grep -q '^reasoning_engine_id' "${SCRIPT_DIR}/terraform.tfvars"; then
+    sed -i "s|^reasoning_engine_id.*|reasoning_engine_id = \"${REASONING_ENGINE_ID}\"|" \
+      "${SCRIPT_DIR}/terraform.tfvars"
+  else
+    echo "" >> "${SCRIPT_DIR}/terraform.tfvars"
+    echo "reasoning_engine_id = \"${REASONING_ENGINE_ID}\"" >> "${SCRIPT_DIR}/terraform.tfvars"
+  fi
+  echo "  Saved to terraform.tfvars."
+fi
 
 # ── Store secrets in Secret Manager ─────────────────────────────────────────
 echo ""

@@ -124,6 +124,10 @@ resource "google_cloud_run_v2_service" "aura" {
         name  = "GEMINI_VOICE"
         value = var.gemini_voice
       }
+      env {
+        name  = "VERTEX_AI_REASONING_ENGINE_ID"
+        value = var.reasoning_engine_id
+      }
 
       # ── Secret env vars ────────────────────────────────────────────────────
       env {

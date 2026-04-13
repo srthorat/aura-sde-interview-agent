@@ -41,19 +41,24 @@ class _SessionState:
     asked:  list[str]             = field(default_factory=list)
     grades: dict[str, dict]       = field(default_factory=dict)
     notes:  list[dict]            = field(default_factory=list)
+    current_round: int | None     = None
+    current_category: str         = ""
 
 _sessions: dict[str, _SessionState] = {}  # session_id → state
+_session_baselines: dict[str, dict[str, Any]] = {}  # session_id → restored-state baseline
 
 
 def create_session_state(session_id: str) -> None:
     """Initialise isolated state for a new interview session."""
     _sessions[session_id] = _SessionState()
+    _session_baselines.pop(session_id, None)
     logger.info(f"[agent] Created session state for {session_id}")
 
 
 def destroy_session_state(session_id: str) -> None:
     """Release state when the session ends to avoid memory leaks."""
     _sessions.pop(session_id, None)
+    _session_baselines.pop(session_id, None)
     _tool_loop_tracker.pop(session_id, None)
     logger.info(f"[agent] Destroyed session state for {session_id}")
 
@@ -64,6 +69,127 @@ def _get_state(session_id: str) -> _SessionState:
         logger.warning(f"[agent] No state found for {session_id} — creating lazily")
         _sessions[session_id] = _SessionState()
     return _sessions[session_id]
+
+
+def mark_session_baseline(session_id: str) -> None:
+    """Snapshot restored state so current-session tools can exclude prior history."""
+    state = _get_state(session_id)
+    _session_baselines[session_id] = {
+        "asked_count": len(state.asked),
+        "notes_count": len(state.notes),
+        "grades": {
+            category: {
+                "grade": str(data.get("grade", "")).strip(),
+                "notes": str(data.get("notes", "")).strip(),
+            }
+            for category, data in state.grades.items()
+            if isinstance(category, str) and isinstance(data, dict)
+        },
+    }
+
+
+def get_session_delta(session_id: str) -> dict[str, Any]:
+    """Return the current-session delta relative to the restored baseline."""
+    state = _get_state(session_id)
+    baseline = _session_baselines.get(session_id, {})
+
+    asked_count = baseline.get("asked_count", 0)
+    notes_count = baseline.get("notes_count", 0)
+    prior_grades = baseline.get("grades", {})
+
+    current_questions = state.asked[asked_count:] if isinstance(asked_count, int) and 0 <= asked_count <= len(state.asked) else list(state.asked)
+    current_notes = state.notes[notes_count:] if isinstance(notes_count, int) and 0 <= notes_count <= len(state.notes) else list(state.notes)
+    current_grades = {
+        category: data
+        for category, data in state.grades.items()
+        if prior_grades.get(category) != data
+    }
+
+    return {
+        "questions": list(current_questions),
+        "notes": list(current_notes),
+        "grades": current_grades,
+        "prior_grades": dict(prior_grades),
+    }
+
+
+def export_session_state(session_id: str) -> dict[str, Any]:
+    """Return a JSON-safe snapshot of the interview state for persistence."""
+    state = _get_state(session_id)
+    return {
+        "asked": [question for question in state.asked if isinstance(question, str) and question.strip()],
+        "grades": {
+            str(category): {
+                "grade": str(data.get("grade", "")).strip(),
+                "notes": str(data.get("notes", "")).strip(),
+            }
+            for category, data in state.grades.items()
+            if isinstance(category, str) and isinstance(data, dict)
+        },
+        "notes": [
+            {
+                "question": str(note.get("question", "")).strip(),
+                "strength": str(note.get("strength", "")).strip(),
+                "weakness": str(note.get("weakness", "")).strip(),
+            }
+            for note in state.notes
+            if isinstance(note, dict)
+        ],
+        "current_round": state.current_round,
+        "current_category": state.current_category,
+    }
+
+
+def import_session_state(session_id: str, snapshot: dict[str, Any]) -> None:
+    """Restore a persisted session snapshot into the current in-process state."""
+    state = _get_state(session_id)
+
+    asked = snapshot.get("asked", []) if isinstance(snapshot, dict) else []
+    state.asked = [
+        question.strip()
+        for question in asked
+        if isinstance(question, str) and question.strip()
+    ]
+
+    restored_grades: dict[str, dict[str, str]] = {}
+    grades = snapshot.get("grades", {}) if isinstance(snapshot, dict) else {}
+    if isinstance(grades, dict):
+        for category, data in grades.items():
+            if not isinstance(category, str) or not isinstance(data, dict):
+                continue
+            grade = str(data.get("grade", "")).lower().strip()
+            notes = str(data.get("notes", "")).strip()
+            if grade in _VALID_GRADES and notes:
+                restored_grades[category.strip().lower().replace(" ", "_")] = {
+                    "grade": grade,
+                    "notes": notes,
+                }
+    state.grades = restored_grades
+
+    restored_notes: list[dict[str, str]] = []
+    notes = snapshot.get("notes", []) if isinstance(snapshot, dict) else []
+    if isinstance(notes, list):
+        for note in notes:
+            if not isinstance(note, dict):
+                continue
+            question = str(note.get("question", "")).strip()
+            strength = str(note.get("strength", "")).strip()
+            weakness = str(note.get("weakness", "")).strip()
+            if question and (strength or weakness):
+                restored_notes.append({
+                    "question": question,
+                    "strength": strength,
+                    "weakness": weakness,
+                })
+    state.notes = restored_notes
+    current_round = snapshot.get("current_round") if isinstance(snapshot, dict) else None
+    state.current_round = current_round if isinstance(current_round, int) and 1 <= current_round <= 4 else None
+    current_category = snapshot.get("current_category", "") if isinstance(snapshot, dict) else ""
+    state.current_category = current_category.strip() if isinstance(current_category, str) else ""
+    logger.info(
+        f"[agent] Restored persisted state for {session_id} "
+        f"(asked={len(state.asked)}, grades={len(state.grades)}, notes={len(state.notes)})"
+    )
 # ---------------------------------------------------------------------------
 
 _QUESTIONS: dict[str, list[str]] = {
@@ -178,6 +304,23 @@ _QUESTIONS: dict[str, list[str]] = {
         "If this were a real hiring decision, what additional information would you want me to have about you?",
         "How has your thinking on any of today's topics evolved during our conversation?",
     ],
+    "debugging": [
+        "You are given a service that intermittently returns stale data after deploys. How would you debug it end to end?",
+        "A production API's p99 latency doubled after a release, but average latency is unchanged. Walk me through your debugging process.",
+        "You see a memory leak in a long-running Python service. How would you narrow down the root cause?",
+        "A distributed job processor is occasionally running the same job twice. How would you investigate and fix it?",
+        "A binary search implementation passes most tests but fails on some edge cases. What specific bugs would you look for first?",
+        "Review this situation: a cache is improving latency but causing occasional stale reads for critical user actions. How would you debug and mitigate it?",
+        "A teammate says their code works locally but fails in CI. How would you structure the debugging conversation and investigation?",
+        "You are handed a flaky test suite with non-deterministic failures. How would you isolate the cause?",
+        "An on-call alert shows rising error rates, but only for one region. What signals would you inspect first and why?",
+        "A queue-backed worker system is falling behind even though CPU usage is low. How would you debug the bottleneck?",
+        "You are reviewing code that introduced a race condition in a concurrent component. How would you explain the bug and propose a fix?",
+        "A customer reports that search results are missing recently uploaded documents. How would you debug the indexing pipeline?",
+        "A mobile client shows duplicate messages after reconnecting to the backend. How would you investigate whether the bug is client-side, server-side, or protocol-related?",
+        "You are given logs, metrics, and a stack trace for a crash loop in one microservice. How would you prioritize your debugging steps?",
+        "A feature flag rollout caused only a subset of users to see incorrect behavior. How would you reason about reproducing and fixing it?",
+    ],
 }
 
 # Build a flat "coding" pool from all topic questions (used when category='coding' but no topic).
@@ -208,6 +351,7 @@ _QUESTIONS_BY_TOPIC: dict[str, dict[str, list[str]]] = {
             "Given a histogram of bar heights, find the largest rectangle that fits entirely within using a stack.",
             "Return the next greater element for each element in an array using a monotonic stack.",
             "Given a sequence of push and pop operations, determine if the pop sequence is valid for the push sequence.",
+            "Design a min-stack that also supports retrieving the second minimum in O(1) time. What extra state do you keep?",
         ],
         "hard": [
             "Solve the trapping rainwater problem using a monotonic stack. Explain approach and complexity.",
@@ -216,6 +360,8 @@ _QUESTIONS_BY_TOPIC: dict[str, dict[str, list[str]]] = {
             "Find the maximum area rectangle in a binary matrix by reducing it to the histogram problem.",
             "Design an in-memory file system supporting mkdir, addContentToFile, readContentFromFile using a stack for path traversal.",
             "Solve the largest rectangle in a skyline problem using two monotonic stacks for left and right boundaries.",
+            "Given an array, compute the sum of subarray minimums using a monotonic stack and explain how duplicate values change the boundary logic.",
+            "Implement an arithmetic expression evaluator with +, -, *, /, parentheses, and unary minus using operator and value stacks.",
         ],
     },
     "queue": {
@@ -241,6 +387,7 @@ _QUESTIONS_BY_TOPIC: dict[str, dict[str, list[str]]] = {
             "Given a binary tree, return its right-side view using a queue-based level-order traversal.",
             "Design a hit counter that counts hits in the last 300 seconds as hits arrive in real time.",
             "Find the shortest path in an unweighted grid from start to end using BFS with a queue.",
+            "Given tasks with cooldown intervals, schedule them in minimum time using a queue for pending work and explain the trade-offs.",
         ],
         "hard": [
             "Find shortest paths in a weighted graph from a source using Dijkstra's — walk through the priority-queue logic.",
@@ -249,6 +396,8 @@ _QUESTIONS_BY_TOPIC: dict[str, dict[str, list[str]]] = {
             "Given a stream of n integers, maintain the top-k most frequent elements at any point using a min-heap.",
             "Design a rate limiter with per-user per-second limits using a token bucket algorithm with a queue.",
             "Solve the sliding window maximum problem in O(n) using a monotonic deque and prove correctness.",
+            "Design a delayed-job queue that supports enqueue, cancel, and polling the next ready job efficiently at scale.",
+            "Given building heights, compute the first taller building to the right for each index while supporting online inserts of new buildings.",
         ],
     },
     "linked list": {
@@ -274,6 +423,7 @@ _QUESTIONS_BY_TOPIC: dict[str, dict[str, list[str]]] = {
             "Group all odd-indexed nodes together followed by all even-indexed nodes in a linked list.",
             "Clone a linked list where each node has a random pointer that can point to any node or null.",
             "Flatten a multilevel doubly linked list where each node may have a child doubly linked list.",
+            "Partition a linked list around a value x so nodes less than x come first while preserving original relative order.",
         ],
         "hard": [
             "Reverse nodes in k-groups. How do you handle fewer than k remaining nodes at the tail?",
@@ -282,6 +432,8 @@ _QUESTIONS_BY_TOPIC: dict[str, dict[str, list[str]]] = {
             "Merge k sorted linked lists — compare the heap approach vs. divide-and-conquer on complexity.",
             "Rotate a linked list to the right by k places. How do you find the new tail in one pass?",
             "Design a linked list that supports O(1) insert-at-head, O(1) delete-any-node, and O(1) move-to-front.",
+            "Sort a linked list in O(n log n) time and O(1) extra space. Why is merge sort the natural fit?",
+            "Deep-copy a linked list with random pointers in O(1) extra space by interleaving cloned nodes with originals.",
         ],
     },
     "tree": {
@@ -307,6 +459,7 @@ _QUESTIONS_BY_TOPIC: dict[str, dict[str, list[str]]] = {
             "Construct a binary tree from its preorder and inorder traversal arrays.",
             "Find all root-to-leaf paths that sum to a given target value.",
             "Convert a sorted array to a height-balanced BST.",
+            "Return the boundary traversal of a binary tree: left boundary, leaves, then right boundary.",
         ],
         "hard": [
             "Find the maximum path sum in a binary tree where the path can start and end at any node.",
@@ -315,6 +468,8 @@ _QUESTIONS_BY_TOPIC: dict[str, dict[str, list[str]]] = {
             "Find the diameter of a binary tree — the longest path between any two nodes.",
             "Implement a BST iterator that uses O(h) memory where h is the tree height.",
             "Design a segment tree that supports range sum queries and point updates in O(log n).",
+            "Given a binary tree, place the minimum number of cameras so every node is monitored. Derive the tree-DP states.",
+            "Serialize and deserialize an N-ary tree while preserving child order and minimizing output size.",
         ],
     },
     "graph": {
@@ -348,6 +503,8 @@ _QUESTIONS_BY_TOPIC: dict[str, dict[str, list[str]]] = {
             "Given equality/inequality constraints over variables, determine if all can be satisfied simultaneously using Union-Find.",
             "Find the minimum spanning tree of a weighted undirected graph — compare Kruskal's and Prim's.",
             "Solve the network delay time problem: find the time for a signal to reach all nodes from a source.",
+            "Given a directed graph with weighted edges and a stop limit k, find the cheapest path from source to destination with at most k stops.",
+            "Reconstruct an alien dictionary order from a sorted word list, then detect when the ordering constraints are inconsistent.",
         ],
     },
     "array": {
@@ -381,6 +538,8 @@ _QUESTIONS_BY_TOPIC: dict[str, dict[str, list[str]]] = {
             "Find the minimum window substring containing all characters of a target string in O(n).",
             "Given a 2D matrix sorted row-wise and column-wise, search for a target in O(m+n).",
             "Solve jump game II: find the minimum number of jumps to reach the last index with a greedy approach.",
+            "Given an unsorted array, find the first missing positive integer in O(n) time and O(1) extra space.",
+            "Count the number of range sums that lie within [lower, upper] using prefix sums and a modified merge-sort approach.",
         ],
     },
     "hash map": {
@@ -414,6 +573,8 @@ _QUESTIONS_BY_TOPIC: dict[str, dict[str, list[str]]] = {
             "Find the number of subarrays whose XOR equals k using a prefix XOR hash map.",
             "Design a log aggregation system that counts events per minute and answers range sum queries efficiently.",
             "Find the minimum number of distinct values in a sliding window of size k at every position.",
+            "Design a distributed unique-ID generator that avoids collisions across regions while keeping IDs roughly time ordered.",
+            "Given a stream of events, maintain the longest consecutive interval of timestamps seen so far using hash-based merging.",
         ],
     },
     "string": {
@@ -447,6 +608,8 @@ _QUESTIONS_BY_TOPIC: dict[str, dict[str, list[str]]] = {
             "Format a list of words so every line has exactly a given width with full justification.",
             "Implement a trie with insert, search, and startsWith. When is a trie better than a hash map?",
             "Find all words on a 2D character board using DFS with backtracking and a trie for pruning.",
+            "Implement wildcard pattern matching supporting '?' and '*' for an entire string. Compare greedy and DP approaches.",
+            "Given a compressed string with nested repetition like '2[a3[b]]', return the decoded string and analyze the worst-case output size.",
         ],
     },
     "recursion": {
@@ -472,6 +635,7 @@ _QUESTIONS_BY_TOPIC: dict[str, dict[str, list[str]]] = {
             "Generate all valid combinations of n pairs of parentheses using recursion.",
             "Find all combinations that sum to a target value using backtracking.",
             "Implement a recursive descent parser for arithmetic expressions with +, -, *, /.",
+            "Given a phone keypad mapping, generate all possible letter combinations for a digit string using recursion and backtracking.",
         ],
         "hard": [
             "Solve the N-Queens problem using backtracking. What pruning strategies improve performance?",
@@ -480,6 +644,8 @@ _QUESTIONS_BY_TOPIC: dict[str, dict[str, list[str]]] = {
             "Solve the word search problem: find a word's path on a 2D character board using DFS with backtracking.",
             "Describe how mutual recursion can parse and evaluate a full arithmetic expression with operator precedence.",
             "Count the ways to tile a 2×n board with 2×1 dominoes using memoised recursion. Derive the closed form.",
+            "Partition a string into all possible palindrome decompositions using recursion and pruning. What memoization helps?",
+            "Generate all structurally unique BSTs containing values 1..n using recursive divide-and-conquer.",
         ],
     },
     "dynamic programming": {
@@ -513,6 +679,8 @@ _QUESTIONS_BY_TOPIC: dict[str, dict[str, list[str]]] = {
             "Find the largest sum rectangle in a 2D matrix using Kadane's on column prefix sums.",
             "Find the shortest superstring covering a set of strings using bitmask DP. Explain the state representation.",
             "Solve the egg drop problem: find the minimum trials to determine the critical floor with k eggs and n floors.",
+            "Given a string, partition it into the minimum number of palindromic substrings. Derive the DP recurrence and reconstruction.",
+            "Count the number of ways to assign + or - signs to reach a target sum. Show the DP reduction from subset-sum.",
         ],
     },
     "sorting": {
@@ -538,6 +706,7 @@ _QUESTIONS_BY_TOPIC: dict[str, dict[str, list[str]]] = {
             "Sort an array of intervals by start time, then merge all overlapping intervals.",
             "Find the kth largest element in an unsorted array — compare quickselect vs. using a heap.",
             "Merge two sorted arrays into one in O(m+n) time and O(1) extra space.",
+            "Given intervals with start and end times, determine the minimum number of meeting rooms needed after sorting the boundaries.",
         ],
         "hard": [
             "Explain Timsort as used in Python. How does it combine merge sort and insertion sort adaptively?",
@@ -546,6 +715,8 @@ _QUESTIONS_BY_TOPIC: dict[str, dict[str, list[str]]] = {
             "Sort a linked list in O(n log n) time and O(1) extra space. What are the challenges vs. sorting an array?",
             "Explain introsort — how does it combine quicksort, heap sort, and insertion sort, and why do libraries use it?",
             "Given an array of n integers, find the minimum number of swaps to sort it. How do you model it as a graph problem?",
+            "Given an array where each element is in [1, n], count reverse pairs efficiently using a modified merge sort and explain the proof.",
+            "Sort log lines with mixed numeric and lexicographic payloads under a custom comparator while preserving stability requirements.",
         ],
     },
     "binary search": {
@@ -579,6 +750,8 @@ _QUESTIONS_BY_TOPIC: dict[str, dict[str, list[str]]] = {
             "Describe the median-of-medians algorithm that finds the kth element in O(n) worst-case. Compare to quickselect.",
             "Count pairs (i, j) with i < j such that arr[j] - arr[i] ≤ k in a sorted array using binary search.",
             "Given words sorted by an alien alphabet, reconstruct the character order using binary search and topological sort.",
+            "Find the kth smallest pair distance in an array by binary-searching the answer and counting valid pairs efficiently.",
+            "Minimise the maximum gas-station gap after adding k new stations using binary search on the answer space.",
         ],
     },
 }
@@ -605,6 +778,100 @@ _QUESTIONS["coding"] = [
     for qs in pools.values()
     for q in qs
 ]
+
+
+def _topic_terms(topic: str) -> list[str]:
+    normalized = topic.strip().lower().replace("-", " ")
+    if not normalized:
+        return []
+    terms = {normalized}
+    for part in normalized.split():
+        if len(part) >= 3:
+            terms.add(part)
+    return [term for term in terms if term]
+
+
+def _filter_questions_by_topic(pool: list[str], topic: str) -> list[str]:
+    terms = _topic_terms(topic)
+    if not terms:
+        return list(pool)
+    filtered = [
+        question
+        for question in pool
+        if any(term in question.lower() for term in terms)
+    ]
+    return filtered if filtered else list(pool)
+
+
+def select_session_questions(
+    round_hint: str = "",
+    difficulty: str = "medium",
+    count: int = 9,
+    topic: str = "",
+) -> list[str]:
+    """Pre-select `count` questions for the session based on round and difficulty.
+
+    Called at session-creation time (in bot.py _system_instruction) so the
+    question bank is baked into the system prompt before the live session starts.
+    No live tool call is needed during the interview — Gemini reads from the
+    injected bank directly.
+
+    For coding rounds, one question is picked per topic at the requested
+    difficulty tier, giving broad topic coverage in a small list.
+    For other rounds (behavioural, system_design, debrief) the flat pool is
+    sampled randomly.
+    """
+    norm = round_hint.strip().lower().replace(" ", "_").replace("-", "_")
+    diff = (difficulty or "medium").strip().lower()
+    if diff not in ("easy", "medium", "hard"):
+        diff = "medium"
+
+    pool: list[str] = []
+    topic_key = topic.strip().lower()
+
+    if norm in ("coding", "coding_1", "coding_2"):
+        if topic_key:
+            matched_pools: dict[str, list[str]] | None = None
+            for key, topic_pools in _QUESTIONS_BY_TOPIC.items():
+                if key in topic_key or topic_key in key:
+                    matched_pools = topic_pools
+                    break
+            if matched_pools:
+                bucket = matched_pools.get(diff, [])
+                if bucket:
+                    return random.sample(bucket, min(count, len(bucket)))
+        # One question per topic at the requested difficulty, then random-sample count.
+        for topic_pools in _QUESTIONS_BY_TOPIC.values():
+            bucket = topic_pools.get(diff, [])
+            if bucket:
+                pool.append(random.choice(bucket))
+        random.shuffle(pool)
+
+    elif norm in ("system_design",):
+        pool = _filter_questions_by_topic(list(_QUESTIONS.get("system_design", [])), topic_key)
+
+    elif norm in ("behavioural", "googliness"):
+        pool = _filter_questions_by_topic(list(_QUESTIONS.get("behavioural", [])), topic_key)
+
+    elif norm in ("debugging", "code_review"):
+        pool = _filter_questions_by_topic(list(_QUESTIONS.get("debugging", [])), topic_key)
+
+    elif norm in ("targeted_debrief", "debrief"):
+        pool = _filter_questions_by_topic(list(_QUESTIONS.get("debrief", [])), topic_key)
+
+    else:
+        # No round selected: mix evenly across all categories.
+        for cat in ("behavioural", "system_design", "debrief"):
+            cat_pool = _filter_questions_by_topic(list(_QUESTIONS.get(cat, [])), topic_key)
+            if cat_pool:
+                pool.extend(random.sample(cat_pool, min(3, len(cat_pool))))
+        coding_pool = _filter_questions_by_topic(list(_QUESTIONS.get("coding", [])), topic_key)
+        if coding_pool:
+            pool.extend(random.sample(coding_pool, min(3, len(coding_pool))))
+
+    if not pool:
+        return []
+    return random.sample(pool, min(count, len(pool)))
 
 
 def get_current_time(**kwargs) -> dict[str, str]:
@@ -652,6 +919,8 @@ def get_interview_question(round_number: int = 1, category: str = "", topic: str
                 available = pool
             question = random.choice(available)
             state.asked.append(question)
+            state.current_round = round_number if round_number in _ROUND_LABELS else state.current_round
+            state.current_category = "coding"
             return {
                 "question": question,
                 "category": "coding",
@@ -673,6 +942,8 @@ def get_interview_question(round_number: int = 1, category: str = "", topic: str
 
     question = random.choice(available)
     state.asked.append(question)
+    state.current_round = round_number if round_number in _ROUND_LABELS else state.current_round
+    state.current_category = category
 
     return {
         "question": question,
@@ -694,6 +965,158 @@ _RUBRIC_CATEGORIES = {
 }
 
 _VALID_GRADES = {"strong_no", "no", "mixed", "yes", "strong_yes"}
+_GRADE_TO_SCORE = {
+    "strong_no": 1.0,
+    "no": 1.8,
+    "mixed": 2.6,
+    "yes": 3.3,
+    "strong_yes": 4.0,
+}
+_ROUND_LABELS = {
+    1: "Behavioural",
+    2: "Coding",
+    3: "System Design",
+    4: "Targeted Debrief",
+}
+_ROUND_SCORECARD_CATEGORIES = {
+    1: [
+        "communication",
+        "collaboration",
+        "awareness",
+        "do_hard_things",
+        "level_up",
+        "time_is_precious",
+        "resoluteness",
+    ],
+    2: [
+        "problem_solving",
+        "code_fluency",
+        "autonomy",
+        "cs_fundamentals",
+        "communication",
+        "resoluteness",
+    ],
+    3: [
+        "system_design",
+        "problem_solving",
+        "cs_fundamentals",
+        "communication",
+        "collaboration",
+        "awareness",
+    ],
+    4: [
+        "awareness",
+        "communication",
+        "curiosity",
+        "level_up",
+        "collaboration",
+        "autonomy",
+    ],
+}
+_CATEGORY_TO_SCORECARD_ROUND = {
+    "behavioural": 1,
+    "coding": 2,
+    "system_design": 3,
+    "debrief": 4,
+}
+
+
+def _humanize_category(category: str) -> str:
+    return category.replace("_", " ")
+
+
+def _resolve_scorecard_round(state: _SessionState, round_number: int = 0, category: str = "") -> tuple[int, str]:
+    category_key = category.lower().strip().replace(" ", "_") if category else ""
+    if category_key == "behavioral":
+        category_key = "behavioural"
+    derived_round = _CATEGORY_TO_SCORECARD_ROUND.get(category_key)
+
+    if isinstance(round_number, int) and round_number in _ROUND_LABELS:
+        resolved_round = round_number
+    elif derived_round:
+        resolved_round = derived_round
+    elif state.current_round in _ROUND_LABELS:
+        resolved_round = state.current_round or 1
+    else:
+        resolved_round = 1
+
+    resolved_category = category_key or state.current_category or _CATEGORIES_BY_ROUND.get(resolved_round, ["behavioural"])[0]
+    return resolved_round, resolved_category
+
+
+def _build_round_scorecard(
+    state: _SessionState,
+    round_number: int = 0,
+    category: str = "",
+    grades: dict[str, dict[str, str]] | None = None,
+) -> dict[str, Any]:
+    resolved_round, resolved_category = _resolve_scorecard_round(state, round_number, category)
+    target_categories = _ROUND_SCORECARD_CATEGORIES.get(resolved_round, [])
+    grade_source = grades if grades is not None else state.grades
+    observed = [
+        (name, grade_source[name])
+        for name in target_categories
+        if name in grade_source and grade_source[name].get("grade") in _GRADE_TO_SCORE
+    ]
+    if not observed and grade_source:
+        observed = [
+            (name, data)
+            for name, data in grade_source.items()
+            if data.get("grade") in _GRADE_TO_SCORE
+        ]
+
+    if not observed:
+        return {
+            "status": "insufficient_evidence",
+            "round_number": resolved_round,
+            "round_label": _ROUND_LABELS[resolved_round],
+            "category": resolved_category,
+            "summary": "There is not enough graded evidence yet to score this round.",
+        }
+
+    numeric_score = sum(_GRADE_TO_SCORE[data["grade"]] for _, data in observed) / len(observed)
+    spoken_score = max(1, min(4, int(round(numeric_score))))
+    strongest = max(observed, key=lambda item: _GRADE_TO_SCORE[item[1]["grade"]])
+    weakest = min(observed, key=lambda item: _GRADE_TO_SCORE[item[1]["grade"]])
+
+    if numeric_score >= 3.6:
+        overall = "standout"
+    elif numeric_score >= 3.0:
+        overall = "strong"
+    elif numeric_score >= 2.3:
+        overall = "developing"
+    else:
+        overall = "needs work"
+
+    return {
+        "status": "ready",
+        "round_number": resolved_round,
+        "round_label": _ROUND_LABELS[resolved_round],
+        "category": resolved_category,
+        "score_out_of_4": round(numeric_score, 1),
+        "spoken_score": spoken_score,
+        "overall_assessment": overall,
+        "graded_categories": [name for name, _data in observed],
+        "top_strength": {
+            "category": strongest[0],
+            "grade": strongest[1]["grade"],
+            "notes": strongest[1]["notes"],
+        },
+        "focus_area": {
+            "category": weakest[0],
+            "grade": weakest[1]["grade"],
+            "notes": weakest[1]["notes"],
+        },
+        "summary": (
+            f"Round {resolved_round} ({_ROUND_LABELS[resolved_round]}): about {spoken_score} out of 4 overall. "
+            f"Your strongest signal was {_humanize_category(strongest[0])}. "
+            f"The main area to tighten is {_humanize_category(weakest[0])}."
+        ),
+        "instruction": (
+            f"Tell the candidate their Round {resolved_round} score explicitly as {spoken_score} out of 4, "
+            "then explain the strongest signal and the main area to improve in plain English."
+        ),
+    }
 
 
 def submit_rubric_grade(category: str, grade: str, notes: str, **kwargs) -> dict[str, str]:
@@ -714,20 +1137,50 @@ def submit_rubric_grade(category: str, grade: str, notes: str, **kwargs) -> dict
     return {"status": "graded", "category": category, "grade": grade}
 
 
-def get_rubric_report(**kwargs) -> dict[str, Any]:
-    """Return all rubric grades recorded so far this session as a structured summary."""
+def get_rubric_report(scope: str = "current", **kwargs) -> dict[str, Any]:
+    """Return rubric grades for the current session by default, plus overall grades."""
     state = _get_state(_session_id_context)
-    if not state.grades:
+    delta = get_session_delta(_session_id_context)
+    scope_key = (scope or "current").strip().lower()
+    selected = delta["grades"] if scope_key != "overall" else state.grades
+    if not selected:
+        if scope_key != "overall" and state.grades:
+            return {
+                "report": "No new rubric grades have been recorded in this session yet.",
+                "count": 0,
+                "overall_count": len(state.grades),
+                "all_grades": dict(state.grades),
+            }
         return {"report": "No rubric grades have been recorded yet.", "count": 0}
     lines = [
         f"{cat}: {data['grade'].upper()} — {data['notes']}"
-        for cat, data in state.grades.items()
+        for cat, data in selected.items()
     ]
     return {
         "report": "\n".join(lines),
-        "grades": dict(state.grades),
-        "count": len(state.grades),
+        "grades": dict(selected),
+        "all_grades": dict(state.grades),
+        "count": len(selected),
+        "overall_count": len(state.grades),
+        "scope": "overall" if scope_key == "overall" else "current",
     }
+
+
+def get_round_scorecard(round_number: int = 0, category: str = "", scope: str = "current", **kwargs) -> dict[str, Any]:
+    """Return a spoken-friendly 1-4 round score using current-session grades by default."""
+    state = _get_state(_session_id_context)
+    delta = get_session_delta(_session_id_context)
+    scope_key = (scope or "current").strip().lower()
+    grade_source = state.grades if scope_key == "overall" else delta["grades"]
+    scorecard = _build_round_scorecard(
+        state,
+        round_number=round_number,
+        category=category,
+        grades=grade_source,
+    )
+    if scorecard.get("status") == "ready":
+        scorecard["scope"] = "overall" if scope_key == "overall" else "current"
+    return scorecard
 
 
 def end_conversation(**kwargs) -> dict[str, Any]:
@@ -762,6 +1215,12 @@ def record_answer_note(question: str, strength: str, weakness: str, **kwargs) ->
         weakness: What needs improvement or was missing.
     """
     state = _get_state(_session_id_context)
+    # In live mode we often ask questions directly from prompt context (no
+    # get_interview_question tool call), so track asked questions here too.
+    question_text = str(question).strip()
+    if question_text and question_text not in state.asked:
+        state.asked.append(question_text)
+
     note = {"question": question, "strength": strength, "weakness": weakness}
     state.notes.append(note)
     logger.info(f"[interview] Note — Q: {question[:60]}... | + {strength} | - {weakness}")
@@ -773,16 +1232,88 @@ def record_answer_note(question: str, strength: str, weakness: str, **kwargs) ->
     }
 
 
-def get_session_summary(**kwargs) -> dict[str, str]:
-    """Return a summary of questions asked so far this session."""
+def _normalize_category_grade_entry(entry: dict[str, Any]) -> dict[str, str]:
+    """Normalize slightly malformed LLM tool payloads for category grades."""
+    normalized: dict[str, str] = {}
+    for raw_key, raw_value in entry.items():
+        if raw_value is None:
+            continue
+        key = str(raw_key).strip().strip("\"'").lower()
+        if key in {"category", "grade", "notes"}:
+            normalized[key] = str(raw_value).strip()
+
+    # Some model payloads misspell the grade key (for example with a locale
+    # variant), but still include a valid grade token in values.
+    if "grade" not in normalized:
+        for raw_value in entry.values():
+            candidate = str(raw_value).strip().lower()
+            if candidate in _VALID_GRADES:
+                normalized["grade"] = candidate
+                break
+    return normalized
+
+
+
+def evaluate_candidate_answer(question: str, strength: str, weakness: str, category_grades: list[dict[str, str]] | None = None, **kwargs) -> dict[str, Any]:
+    """Record an answer note and submit multiple rubric grades in a single call to save latency.
+    
+    Args:
+        question: The question that was answered.
+        strength: What the candidate did well.
+        weakness: What needs improvement or was missing.
+        category_grades: Optional list of dicts. Each dict MUST have:
+                         - 'category' (e.g. 'problem_solving')
+                         - 'grade' ('strong_no', 'no', 'mixed', 'yes', 'strong_yes')
+                         - 'notes' (observable facts)
+    """
+    note_result = record_answer_note(question, strength, weakness)
+    grade_results = []
+    if category_grades:
+        for g in category_grades:
+            normalized = _normalize_category_grade_entry(g)
+            if "category" in normalized and "grade" in normalized and "notes" in normalized:
+                res = submit_rubric_grade(
+                    normalized["category"],
+                    normalized["grade"],
+                    normalized["notes"],
+                )
+                grade_results.append(res)
+    return {
+        "status": "success",
+        "note_recorded": note_result,
+        "grades_submitted": grade_results,
+        "graded_categories": [result.get("category", "") for result in grade_results if isinstance(result, dict)],
+    }
+
+
+def get_session_summary(scope: str = "overall", **kwargs) -> dict[str, str]:
+    """Return an overall recap by default, with current-session counts included when available."""
     state = _get_state(_session_id_context)
-    count = len(state.asked)
+    delta = get_session_delta(_session_id_context)
+    scope_key = (scope or "overall").strip().lower()
+    questions = delta["questions"] if scope_key == "current" else state.asked
+    count = len(questions)
     if count == 0:
-        return {"summary": "No questions have been asked yet in this session."}
-    summary = f"{count} question{'s' if count != 1 else ''} covered: " + "; ".join(
-        q[:50] + "…" for q in state.asked
-    )
-    return {"summary": summary, "questions_asked": str(count)}
+        message = (
+            "No new questions have been asked yet in this session."
+            if scope_key == "current"
+            else "No questions have been asked yet in this session."
+        )
+        result = {"summary": message}
+    else:
+        summary = f"{count} question{'s' if count != 1 else ''} covered: " + "; ".join(
+            q[:50] + "…" for q in questions
+        )
+        result = {"summary": summary, "questions_asked": str(count)}
+
+    current_count = len(delta["questions"])
+    if scope_key != "current" and current_count:
+        result["current_session_questions_asked"] = str(current_count)
+        result["current_session_summary"] = (
+            f"{current_count} question{'s' if current_count != 1 else ''} covered in this live session: "
+            + "; ".join(q[:50] + "…" for q in delta["questions"])
+        )
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -793,60 +1324,22 @@ TOOL_REGISTRY: dict[str, Any] = {
     "get_current_time": get_current_time,
     "get_interview_question": get_interview_question,
     "record_answer_note": record_answer_note,
+    "evaluate_candidate_answer": evaluate_candidate_answer,
     "get_session_summary": get_session_summary,
     "submit_rubric_grade": submit_rubric_grade,
     "get_rubric_report": get_rubric_report,
+    "get_round_scorecard": get_round_scorecard,
     "end_conversation": end_conversation,
 }
 
 LIVE_TOOL_DECLARATIONS = [
-    {
-        "name": "get_current_time",
-        "description": "Returns the current UTC time and date. Use to tell the candidate how long they have been speaking.",
-        "parameters": {"type": "OBJECT", "properties": {}, "required": []},
-    },
-    {
-        "name": "get_interview_question",
-        "description": (
-            "Fetch a targeted interview question for a specific round, category, topic, and difficulty. "
-            "ALWAYS call this when presenting the next question. "
-            "If the candidate mentions a specific data structure or algorithm (e.g. 'stack', 'queue', "
-            "'linked list', 'tree', 'graph', 'array', 'hash map', 'sorting', 'binary search', "
-            "'dynamic programming', 'recursion', 'string'), pass it as the topic parameter. "
-            "If the candidate requests easy, medium, or hard difficulty, pass it as the difficulty parameter."
-        ),
-        "parameters": {
-            "type": "OBJECT",
-            "properties": {
-                "round_number": {
-                    "type": "INTEGER",
-                    "description": "Interview round number 1–4.",
-                },
-                "category": {
-                    "type": "STRING",
-                    "description": "Question category: 'behavioural', 'coding', 'system_design', or 'debrief'. Leave empty to use round default.",
-                },
-                "topic": {
-                    "type": "STRING",
-                    "description": (
-                        "Specific data structure or algorithm the candidate requested. "
-                        "One of: 'stack', 'queue', 'linked list', 'tree', 'graph', 'array', "
-                        "'hash map', 'string', 'recursion', 'dynamic programming', 'sorting', 'binary search'. "
-                        "Leave empty if the candidate did not specify a topic."
-                    ),
-                },
-                "difficulty": {
-                    "type": "STRING",
-                    "description": (
-                        "Desired difficulty level: 'easy', 'medium', or 'hard'. "
-                        "Pass this when the candidate asks for an easy, medium, or hard question. "
-                        "Leave empty to pick from all difficulty levels."
-                    ),
-                },
-            },
-            "required": [],
-        },
-    },
+    # ── Write-state tools (kept as live tools — needed for persistence) ──────
+    # NOTE: get_interview_question, get_current_time, get_session_summary,
+    # get_rubric_report, get_round_scorecard are intentionally NOT included here.
+    # Each live tool call blocks Gemini from speaking (~4-7s round-trip). Read-only
+    # tools cause Gemini to pause before generating its response, which users
+    # experience as silence. Instead, the model draws questions from its own
+    # knowledge + the session history injected in the system context.
     {
         "name": "record_answer_note",
         "description": (
@@ -871,11 +1364,6 @@ LIVE_TOOL_DECLARATIONS = [
             },
             "required": ["question", "strength", "weakness"],
         },
-    },
-    {
-        "name": "get_session_summary",
-        "description": "Get a summary of all questions asked and notes taken in this session so far.",
-        "parameters": {"type": "OBJECT", "properties": {}, "required": []},
     },
     {
         "name": "submit_rubric_grade",
@@ -905,14 +1393,6 @@ LIVE_TOOL_DECLARATIONS = [
             },
             "required": ["category", "grade", "notes"],
         },
-    },
-    {
-        "name": "get_rubric_report",
-        "description": (
-            "Return all rubric grades recorded so far this session. "
-            "Call this at the end of any round to produce the candidate's scorecard."
-        ),
-        "parameters": {"type": "OBJECT", "properties": {}, "required": []},
     },
     {
         "name": "end_conversation",
@@ -950,17 +1430,21 @@ def build_adk_agent(
         before_tool_callback: Optional callback invoked before each tool call.
         after_tool_callback: Optional callback invoked after each tool call.
     """
+    # Only include tools that MUST be live (write-state or session teardown).
+    # Read-only fetch tools (get_interview_question, get_current_time, etc.)
+    # are intentionally excluded: each live tool call blocks Gemini from
+    # speaking for ~4-8s per round-trip.  Gemini draws questions from its
+    # own knowledge based on the system prompt.
     return Agent(
         name="aura",
         model=model,
         instruction=system_instruction,
         tools=[
-            get_current_time,
-            get_interview_question,
-            record_answer_note,
-            get_session_summary,
+            evaluate_candidate_answer,
             submit_rubric_grade,
             get_rubric_report,
+            get_round_scorecard,
+            get_session_summary,
             end_conversation,
         ],
         before_tool_callback=before_tool_callback,

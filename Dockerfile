@@ -1,4 +1,4 @@
-# ── Aura (Solution 4) — Dockerfile ─────────────────────────────────────────
+# ── Aura — Google SDE Interview Coach ───────────────────────────────────────
 # Stage 1: Build the React frontend
 FROM node:20-bookworm-slim AS frontend-build
 
@@ -30,7 +30,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     swig \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app/solution4
+WORKDIR /app
 
 COPY pyproject.toml uv.lock ./
 RUN python -m venv "$VIRTUAL_ENV" && \

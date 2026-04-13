@@ -6,6 +6,7 @@ It covers:
 - Initial Terraform deployment
 - Connecting GitHub to Cloud Build in the GCP UI
 - Finishing CI/CD trigger setup with Terraform
+- Verifying builds, logs, triggers, and Cloud Run revisions
 - Custom domain setup with GoDaddy
 - Upgrade, stop, restart, and delete operations
 
@@ -87,9 +88,23 @@ terraform output
 ```
 
 Important note:
-- Cloud Run is already live.
-- The remaining optional Terraform item is the Cloud Build GitHub trigger.
-- That trigger will fail until the GitHub repository is connected in the GCP UI.
+- Cloud Run and the GitHub-triggered Cloud Build pipeline are already live.
+- Terraform should now reconcile cleanly if the same deployment service account is used.
+
+Recommended deploy/reconcile flow:
+
+```bash
+cd /home/ubuntu/velox/aura-sde-interview-agent/infra
+export GOOGLE_APPLICATION_CREDENTIALS=/home/ubuntu/.config/gcp/aura-deploy.json
+
+terraform init -upgrade
+terraform plan -no-color
+terraform apply -auto-approve
+terraform output
+```
+
+Expected result:
+- `terraform plan -no-color` should report no changes when infra is in sync.
 
 ## 4. Manual Image Build And Push
 
@@ -126,7 +141,7 @@ Verify service status:
 gcloud run services describe aura-sde-interview-agent \
   --region="$REGION" \
   --project="$PROJECT_ID" \
-  --format='yaml(status.url,status.latestReadyRevisionName,status.traffic)'
+  --format='yaml(status.url,status.latestReadyRevisionName,status.latestCreatedRevisionName,status.traffic)'
 ```
 
 Verify health endpoint:
@@ -135,9 +150,15 @@ Verify health endpoint:
 curl -fsS https://aura-sde-interview-agent-ivhauk7c7a-uc.a.run.app/health
 ```
 
+Verify the root page responds:
+
+```bash
+curl -I -sS https://aura-sde-interview-agent-ivhauk7c7a-uc.a.run.app/ | head -n 5
+```
+
 ## 6. Connect GitHub To Cloud Build In GCP UI
 
-This is required before `terraform apply` can create the GitHub-based Cloud Build trigger.
+This section documents the working trigger configuration that is now in use.
 
 ### What you are connecting
 
@@ -149,6 +170,12 @@ Branch to watch:
 
 Build config file:
 - `cloudbuild.yaml`
+
+Trigger name:
+- `trigger-aura-deploy`
+
+Execution service account:
+- `aura-deploy@project-dcfc3a62-8889-44a3-ad9.iam.gserviceaccount.com`
 
 ### UI steps
 
@@ -191,7 +218,77 @@ Then verify triggers:
 gcloud builds triggers list --project="$PROJECT_ID"
 ```
 
-## 7. GoDaddy Custom Domain Setup
+Describe the active trigger:
+
+```bash
+gcloud builds triggers describe \
+  94813f88-5dbe-434d-81e0-cc1ce2d05725 \
+  --project="$PROJECT_ID" \
+  --region=global \
+  --format='yaml(name,filename,serviceAccount,github)'
+```
+
+Notes:
+- The trigger is configured so build logs stay in GCP, not GitHub.
+- The trigger watches pushes to `main` on `srthorat/aura-sde-interview-agent`.
+- The final working `cloudbuild.yaml` flow is: build image, push commit tag, push `latest`, then deploy to Cloud Run.
+
+## 7. Build And Deployment Verification Commands
+
+Use these commands during or after deployment to inspect the current state.
+
+### List recent Cloud Build runs
+
+```bash
+gcloud builds list \
+  --project="$PROJECT_ID" \
+  --limit=10 \
+  --format='table(id,status,createTime,substitutions.COMMIT_SHA)'
+```
+
+### Describe a specific build
+
+```bash
+gcloud builds describe BUILD_ID \
+  --project="$PROJECT_ID" \
+  --format='yaml(status,logUrl,failureInfo,results,steps,statusDetail)'
+```
+
+### Stream Cloud Build logs
+
+```bash
+gcloud beta builds log --stream \
+  --project="$PROJECT_ID" \
+  BUILD_ID
+```
+
+### Query Cloud Logging for build failures
+
+```bash
+gcloud logging read \
+  'resource.type="build" AND resource.labels.build_id="BUILD_ID"' \
+  --project="$PROJECT_ID" \
+  --limit=100 \
+  --format='table(timestamp,severity,textPayload)'
+```
+
+### Verify latest Cloud Run revision
+
+```bash
+gcloud run services describe aura-sde-interview-agent \
+  --region="$REGION" \
+  --project="$PROJECT_ID" \
+  --format='yaml(status.url,status.latestReadyRevisionName,status.latestCreatedRevisionName)'
+```
+
+### Verify the app is serving traffic
+
+```bash
+curl -fsS https://aura-sde-interview-agent-ivhauk7c7a-uc.a.run.app/health
+curl -I -sS https://aura-sde-interview-agent-ivhauk7c7a-uc.a.run.app/ | head -n 5
+```
+
+## 8. GoDaddy Custom Domain Setup
 
 This repo already has Terraform support for a custom domain fronted by a Global HTTPS Load Balancer.
 
@@ -255,14 +352,15 @@ gcloud compute ssl-certificates describe aura-ssl-cert \
 When active, open:
 - `https://aura.veloxpro.in`
 
-## 8. Day-2 Operations
+## 9. Day-2 Operations
 
 ### View Cloud Run service status
 
 ```bash
 gcloud run services describe aura-sde-interview-agent \
   --region="$REGION" \
-  --project="$PROJECT_ID"
+  --project="$PROJECT_ID" \
+  --format='yaml(status.url,status.latestReadyRevisionName,status.latestCreatedRevisionName,status.traffic)'
 ```
 
 ### View recent Cloud Run logs
@@ -283,6 +381,14 @@ gcloud run revisions list \
   --service=aura-sde-interview-agent
 ```
 
+### View Artifact Registry images
+
+```bash
+gcloud artifacts docker images list \
+  "${REGION}-docker.pkg.dev/${PROJECT_ID}/aura/aura-backend" \
+  --include-tags
+```
+
 ### Roll traffic to latest revision
 
 ```bash
@@ -292,7 +398,7 @@ gcloud run services update-traffic aura-sde-interview-agent \
   --project="$PROJECT_ID"
 ```
 
-## 9. Upgrade Procedure
+## 10. Upgrade Procedure
 
 Use this when you want to deploy a new application version.
 
@@ -328,7 +434,29 @@ terraform plan -no-color
 terraform apply -auto-approve
 ```
 
-## 10. Stop And Restart Guidance
+### Option C. GitHub-triggered deploy
+
+Normal day-to-day deploy path:
+
+```bash
+cd /home/ubuntu/velox/aura-sde-interview-agent
+git push origin main
+```
+
+Then monitor the triggered build:
+
+```bash
+gcloud builds list \
+  --project="$PROJECT_ID" \
+  --limit=5 \
+  --format='table(id,status,createTime,substitutions.COMMIT_SHA)'
+
+gcloud builds describe BUILD_ID \
+  --project="$PROJECT_ID" \
+  --format='yaml(status,logUrl,failureInfo,results,steps,statusDetail)'
+```
+
+## 11. Stop And Restart Guidance
 
 Cloud Run does not have a normal VM-style stop/start lifecycle.
 
@@ -382,7 +510,7 @@ gcloud run services update aura-sde-interview-agent \
   --set-env-vars=ROLLING_RESTART_TS="$(date +%s)"
 ```
 
-## 11. Delete Procedure
+## 12. Delete Procedure
 
 Delete the Cloud Run service only:
 
@@ -405,9 +533,25 @@ Warning:
 - `terraform destroy` removes Cloud Run, Artifact Registry repo, IAM bindings, Secret Manager secret containers, the Cloud Build trigger, and optional load balancer resources.
 - Secret versions and retained artifacts may still need manual review depending on GCP behavior and provider settings.
 
-## 12. Known Follow-Up Item
+## 13. Current Working State
 
-Current remaining setup item:
-- Connect GitHub to Cloud Build in the GCP UI, then rerun `terraform apply`
+Verified current state:
+- Cloud Run service: `aura-sde-interview-agent`
+- Region: `us-central1`
+- Public URL: `https://aura-sde-interview-agent-ivhauk7c7a-uc.a.run.app`
+- Cloud Build trigger: `trigger-aura-deploy`
+- Trigger source: push to `main` on `srthorat/aura-sde-interview-agent`
+- Build pipeline order: build -> push commit image -> push latest -> deploy
 
-After that, pushes to `main` can create a normal CI/CD flow through `cloudbuild.yaml`.
+Latest verification commands used:
+
+```bash
+gcloud builds list --project="$PROJECT_ID" --limit=5 --format='table(id,status,createTime,substitutions.COMMIT_SHA)'
+
+gcloud run services describe aura-sde-interview-agent \
+  --region="$REGION" \
+  --project="$PROJECT_ID" \
+  --format='yaml(status.url,status.latestReadyRevisionName,status.latestCreatedRevisionName)'
+
+curl -fsS https://aura-sde-interview-agent-ivhauk7c7a-uc.a.run.app/health
+```

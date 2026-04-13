@@ -175,8 +175,45 @@ def test_gemini_text_model_default_and_override(monkeypatch):
     assert voice_module._gemini_text_model() == "gemini-2.5-flash"
 
 
+def test_exit_confirmation_helpers():
+    voice_module = _import_module()
+
+    assert voice_module._is_exit_confirmation_prompt("Are you done for today?") is True
+    assert voice_module._is_exit_confirmation_prompt("Would you like to keep going?") is False
+    assert voice_module._is_affirmative_exit_reply("Yes.") is True
+    assert voice_module._is_affirmative_exit_reply("Yep") is True
+    assert voice_module._is_affirmative_exit_reply("no") is False
+
+
+def test_tool_timing_guard_allows_only_right_time_tools():
+    voice_module = _import_module()
+
+    startup_delta = {"questions": [], "notes": [], "grades": {}, "prior_grades": {"communication": {"grade": "yes", "notes": "prior"}}}
+    active_delta = {"questions": ["Q1"], "notes": [{"question": "Q1"}], "grades": {"communication": {"grade": "yes", "notes": "clear"}}, "prior_grades": {}}
+    wrap_delta = {
+        "questions": ["Q1", "Q2", "Q3"],
+        "notes": [{"question": "Q1"}, {"question": "Q2"}],
+        "grades": {"communication": {"grade": "yes", "notes": "clear"}, "problem_solving": {"grade": "mixed", "notes": "partial"}},
+        "prior_grades": {},
+    }
+
+    assert voice_module._tool_timing_guard("get_session_summary", "", startup_delta, True) is None
+    assert voice_module._tool_timing_guard("get_session_summary", "can you recap?", active_delta, False) is None
+    blocked_summary = voice_module._tool_timing_guard("get_session_summary", "next question", active_delta, False)
+    assert blocked_summary["status"] == "blocked"
+
+    blocked_score = voice_module._tool_timing_guard("get_round_scorecard", "next question", active_delta, False)
+    assert blocked_score["status"] == "blocked"
+    assert voice_module._tool_timing_guard("get_round_scorecard", "can i get feedback?", active_delta, False) is None
+    assert voice_module._tool_timing_guard("get_rubric_report", "wrap up this round", active_delta, False) is None
+    assert voice_module._tool_timing_guard("get_rubric_report", "", wrap_delta, False) is None
+
+
 def test_session_service_singleton_and_history(monkeypatch):
     voice_module = _import_module()
+
+    # Ensure SESSION_PERSIST_DIR does not interfere with InMemory fallback assertions
+    monkeypatch.delenv("SESSION_PERSIST_DIR", raising=False)
 
     monkeypatch.setenv("GOOGLE_CLOUD_PROJECT_ID", "project-1")
     monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "asia-south1")
@@ -201,17 +238,41 @@ def test_session_service_singleton_and_history(monkeypatch):
     assert voice_module._get_session_service() == "svc"
     assert voice_module._session_service_failures == 0
     assert voice_module._get_session_service() == "svc"
+    voice_module._record_session_service_failure("load", RuntimeError("boom-1"))
+    assert voice_module._session_service_failures == 1
+    voice_module._record_session_service_success()
+    assert voice_module._session_service_failures == 0
+
+    resets = []
+
+    def fake_reset_session_service():
+        resets.append(True)
+        voice_module._session_service = None
+
+    monkeypatch.setattr(voice_module, "_reset_session_service", fake_reset_session_service)
+    voice_module._record_session_service_failure("load", RuntimeError("boom-1"))
+    voice_module._record_session_service_failure("load", RuntimeError("boom-2"))
+    voice_module._record_session_service_failure("load", RuntimeError("boom-3"))
+    assert resets == [True]
+    assert voice_module._session_service_failures == 0
+
     voice_module._reset_session_service()
     assert voice_module._session_service is None
 
     history = [
         _make_event("user", "hello"),
         _make_event("model", "hi there"),
+        _make_event("model", f"{voice_module._SESSION_STATE_MARKER}" + json.dumps({"asked": ["Q1"], "grades": {}, "notes": []})),
         SimpleNamespace(content=None),
         SimpleNamespace(content=SimpleNamespace(role="user", parts=[SimpleNamespace(not_text="x")])),
     ]
     context = voice_module._history_to_context(history)
     assert context == "Recent conversation history:\nUSER: hello\nMODEL: hi there"
+    assert voice_module._extract_session_state_snapshot(history) == {
+        "asked": ["Q1"],
+        "grades": {},
+        "notes": [],
+    }
     assert voice_module._history_to_context([]) == ""
 
     long_history = [_make_event("user", "x" * 2100)]
@@ -219,6 +280,72 @@ def test_session_service_singleton_and_history(monkeypatch):
 
     broken_history = [SimpleNamespace(content=SimpleNamespace(role="user", parts=None))]
     assert voice_module._history_to_context(broken_history) == ""
+
+    compressed = voice_module._history_to_context(
+        [
+            _make_event("model", "Tell me about a hard production incident?"),
+            _make_event("user", "I led the mitigation."),
+            _make_event("model", "How did you prioritize fixes?"),
+            _make_event("user", "By customer impact first."),
+            _make_event("model", "What did you learn from that incident?"),
+        ]
+    )
+    assert compressed.startswith("Recent conversation context:\n")
+    assert "Questions already covered:" in compressed
+    assert "Latest exchange:" in compressed
+
+
+@pytest.mark.asyncio
+async def test_restore_and_persist_session_state_helpers(monkeypatch):
+    voice_module = _import_module()
+
+    restored = []
+    monkeypatch.setattr(voice_module, "import_session_state", lambda session_id, snapshot: restored.append((session_id, snapshot)))
+
+    snapshot = {"asked": ["Q1"], "grades": {"communication": {"grade": "yes", "notes": "clear"}}, "notes": []}
+    prior_session = SimpleNamespace(
+        id="old-session",
+        events=[_make_event("model", voice_module._SESSION_STATE_MARKER + json.dumps(snapshot))],
+    )
+    current_session = SimpleNamespace(id="live-session", events=[])
+
+    class SessionService:
+        def __init__(self):
+            self.last_append = None
+
+        async def list_sessions(self, **kwargs):
+            self.last_list = kwargs
+            return SimpleNamespace(sessions=[SimpleNamespace(id="old-session")])
+
+        async def get_session(self, **kwargs):
+            self.last_get = kwargs
+            if kwargs["session_id"] == "old-session":
+                return prior_session
+            return current_session
+
+        async def append_event(self, **kwargs):
+            self.last_append = kwargs
+
+    service = SessionService()
+    restored_ok = await voice_module._restore_prior_session_state(
+        service,
+        "app-name",
+        "alice",
+        "live-session",
+    )
+    assert restored_ok is True
+    assert restored == [("live-session", snapshot)]
+
+    await voice_module._persist_session_state(
+        service,
+        "app-name",
+        "alice",
+        "live-session",
+        snapshot,
+    )
+    persisted_text = service.last_append["event"].content.parts[0].text
+    assert persisted_text.startswith(voice_module._SESSION_STATE_MARKER)
+    assert json.loads(persisted_text[len(voice_module._SESSION_STATE_MARKER):]) == snapshot
 
 
 @pytest.mark.asyncio
@@ -278,9 +405,19 @@ async def test_event_and_session_helpers(monkeypatch):
             raise RuntimeError("boom")
 
     failing = FailingSessionService()
+    recovery_calls = []
+
+    class RecoverySessionService(SessionService):
+        async def create_session(self, **kwargs):
+            recovery_calls.append(kwargs)
+            return SimpleNamespace(id="recovered", events=[])
+
+    monkeypatch.setattr(voice_module, "_get_session_service", lambda: RecoverySessionService())
     session, context = await voice_module._load_adk_session(failing, agent, "bob")
-    assert session.id == "created"
+    assert session.id == "recovered"
     assert context == ""
+    assert recovery_calls == [{"app_name": "projects/project-1/locations/us-central1/reasoningEngines/engine-1", "user_id": "bob"}]
+    assert voice_module._session_service_failures == 0
 
     class EmptySessionService(SessionService):
         async def list_sessions(self, **kwargs):

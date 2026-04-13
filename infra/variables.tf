@@ -79,3 +79,15 @@ variable "custom_domain" {
   type        = string
   default     = "aura.veloxpro.in"
 }
+
+variable "reasoning_engine_id" {
+  description = "Numeric ID of the Vertex AI Reasoning Engine used for cross-deployment session persistence. Created automatically by deploy.sh if not set. Set to empty string to disable (falls back to FileSessionService or InMemory)."
+  type        = string
+  default     = ""
+}
+
+variable "gcs_staging_bucket" {
+  description = "GCS bucket name (no gs:// prefix) used as staging area when creating the Vertex AI Reasoning Engine. Only needed if reasoning_engine_id is empty."
+  type        = string
+  default     = ""
+}

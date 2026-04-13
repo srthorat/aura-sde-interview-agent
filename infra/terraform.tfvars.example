@@ -6,6 +6,17 @@ project_id  = "your-gcp-project-id"
 region      = "us-central1"
 livekit_url = "wss://your-livekit-project.livekit.cloud"
 
+# ── Session persistence (Vertex AI Reasoning Engine) ─────────────────────────
+# deploy.sh creates this automatically and writes the ID here.
+# You can also set it manually after running create_reasoning_engine.py.
+# Leave empty to let deploy.sh handle it on first run.
+reasoning_engine_id = ""
+
+# GCS bucket used as staging area when creating the Reasoning Engine.
+# deploy.sh creates it automatically if it doesn't exist.
+# Format: bucket name only (no gs:// prefix). Defaults to aura-staging-<project-prefix>
+gcs_staging_bucket = "aura-staging-your-project"
+
 # Custom domain (aura.veloxpro.in via Global HTTPS Load Balancer)
 # Set to true once the Cloud Run service is deployed and you are ready
 # to provision the LB + SSL cert + GoDaddy DNS record.

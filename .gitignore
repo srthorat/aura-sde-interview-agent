@@ -13,6 +13,7 @@ htmlcov/
 # Node / Frontend
 node_modules/
 dist/
+frontend/dist/
 .cache/
 frontend/coverage/
 frontend/test-results/
@@ -28,3 +29,5 @@ infra/terraform.tfvars
 # Misc
 .DS_Store
 *.log
+*.code-workspace
+SESSION_SUMMARY_*.md

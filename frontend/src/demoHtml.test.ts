@@ -671,6 +671,8 @@ describe("demo.html summary rendering", () => {
     [{ communication: { grade: "strong", notes: "Clear." } }, "communication · Strong"],
     [{ system_design: { grade: "weak", notes: "Needs structure." } }, "system_design · Weak"],
     [{ problem_solving: { grade: "mixed", notes: "Partial." } }, "problem_solving · Mixed"],
+    [{ communication: { grade: "strong_yes", notes: "Clear." } }, "communication · Strong Yes"],
+    [{ system_design: { grade: "strong_no", notes: "Needs structure." } }, "system_design · Strong No"],
   ])("showSummary renders grade chips %#", (grades, expected) => {
     const harness = buildHarness();
     harness.api.showSummary({
@@ -680,6 +682,31 @@ describe("demo.html summary rendering", () => {
       questions_asked: [],
     });
     expect(harness.document.getElementById("summary-body")?.textContent).toContain(expected);
+    harness.close();
+  });
+
+  it("showSummary stores and renders candidate progress for named users", async () => {
+    const harness = buildHarness();
+    harness.document.getElementById("modal-id-input")!.value = "alice";
+    harness.fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ exists: true, rounds: 2 }),
+    });
+
+    await harness.api.checkCandidateId();
+
+    harness.api.showSummary({
+      duration_secs: 120,
+      rubric_grades: { communication: { grade: "yes", notes: "Clear explanation" } },
+      answer_notes: [],
+      questions_asked: ["Q1", "Q2"],
+    });
+
+    const summaryText = harness.document.getElementById("summary-body")?.textContent ?? "";
+    expect(summaryText).toContain("Candidate Progress");
+    expect(summaryText).toContain("Sessions");
+    expect(summaryText).toContain("Avg Rubric");
+    expect(summaryText).toContain("Questions");
     harness.close();
   });
 

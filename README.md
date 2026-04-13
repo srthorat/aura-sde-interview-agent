@@ -2,12 +2,32 @@
 
 Aura is a real-time AI-powered Google SDE interview coach built on the **Google ADK** + **Gemini Live** native audio stack with **LiveKit** WebRTC transport and **Vertex AI** persistent session memory.
 
+This repo is now in a hackathon-ready state: the core demo flow is implemented, locally testable, deploys on Google Cloud Run, and includes the final spoken scoring and memory continuity features that matter in a live judging session.
+
+## Core Features
+
+1. Real-time voice interview agent with interruption handling and Gemini server-side VAD.
+2. Four-round Google-style interview flow covering behavioural, coding, system design, and debrief.
+3. Live spoken per-round scoring on a clear 1-4 scale, plus post-call rubric grading, answer feedback, and exportable session summary.
+4. Candidate progress view for named users, showing recent sessions, average rubric score, and question volume.
+5. Named-user interview state persistence across restarts, carrying forward asked questions, rubric grades, and answer notes.
+6. Self-healing Vertex AI session-service recovery for repeated session persistence failures.
+7. Google Cloud deployment on Cloud Run with Artifact Registry, Secret Manager, Vertex AI, Terraform, and Cloud Build CI/CD.
+
+## Demo Value
+
+Why this is a strong live demo:
+1. It is visibly multimodal: the candidate speaks naturally, Aura responds with low-latency voice, and the UI shows live transcript and session state.
+2. It demonstrates real continuity: named users come back to preserved notes, grades, and prior round context instead of starting from zero.
+3. It closes the feedback loop during the session: Aura can now speak a clear round score out of 4 before wrap-up, instead of hiding evaluation until the end.
+4. It is actually deployable: the same repo includes Cloud Run, Cloud Build, Artifact Registry, Secret Manager, and Terraform infrastructure.
+
 | Layer | Technology |
 |---|---|
 | Agent framework | Google ADK (`google-adk`) — `LlmAgent`, `VertexAiSessionService` |
 | Voice model | `gemini-live-2.5-flash-native-audio` via Vertex AI bidi stream |
 | WebRTC transport | LiveKit (`livekit`, `livekit-api`) |
-| Session memory | Vertex AI Agent Engine (`VertexAiSessionService`) |
+| Session memory | Vertex AI Agent Engine (`VertexAiSessionService`) with named-user state snapshots plus automatic recovery after repeated session-service failures |
 | Infra | Google Cloud only (Cloud Run, Artifact Registry, Secret Manager, Vertex AI) |
 | Backend | FastAPI + Python 3.11, containerised on Cloud Run |
 | Frontend | Vite + React + LiveKit JS SDK |
@@ -16,6 +36,11 @@ Aura is a real-time AI-powered Google SDE interview coach built on the **Google 
 ---
 
 ## Architecture
+
+![Aura Architecture Diagram](docs/Aura-Architecture.png)
+
+<details>
+<summary>ASCII overview</summary>
 
 ```
 Browser mic → LiveKit WebRTC → PCM16 @ 16 kHz
@@ -27,6 +52,8 @@ Browser mic → LiveKit WebRTC → PCM16 @ 16 kHz
                                     ↓
 Browser speaker ← LiveKit WebRTC ← PCM16 @ 24 kHz ← Gemini audio response
 ```
+
+</details>
 
 ### VAD strategy — Gemini server-side turn detection + local UI hints
 
@@ -172,6 +199,112 @@ Open `http://localhost:7863` if `PORT=7863`, otherwise `http://localhost:7862`.
 
 ---
 
+## Session Persistence
+
+Aura remembers each candidate's interview history (questions asked, scores, round progress) across reconnects. There are three tiers — use the one that fits your deployment:
+
+| Tier | Env var | Survives | Best for |
+|---|---|---|---|
+| **Vertex AI Agent Engine** | `VERTEX_AI_REASONING_ENGINE_ID` | Container restarts, Cloud Run scale-out, server replacement | Production / Cloud Run |
+| **File-based** | `SESSION_PERSIST_DIR` | Process restarts (with Docker volume mount) | Single-VM / local dev |
+| **In-memory** | _(neither set)_ | Current process only | Quick testing |
+
+---
+
+### Tier 1 — Vertex AI Agent Engine (recommended for Cloud Run)
+
+This uses Google-managed storage so sessions survive any restart, upgrade, or scale event.
+
+#### Step 1 — Enable the API
+
+```bash
+gcloud services enable aiplatform.googleapis.com \
+  --project=YOUR_PROJECT_ID
+```
+
+#### Step 2 — Create the Reasoning Engine resource
+
+The Reasoning Engine is just a named container for sessions — no code is deployed to it.
+
+```bash
+gcloud ai reasoning-engines create \
+  --display-name="aura-sessions" \
+  --region=us-central1 \
+  --project=YOUR_PROJECT_ID
+```
+
+The output will look like:
+```
+Created reasoning engine: projects/YOUR_PROJECT_ID/locations/us-central1/reasoningEngines/1234567890123456789
+```
+
+Note the **numeric ID** at the end (e.g. `1234567890123456789`).
+
+#### Step 3 — Grant the service account access
+
+The identity running the bot needs `aiplatform.user` on the project:
+
+```bash
+# For local dev — your personal account
+gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+  --member="user:YOUR_EMAIL" \
+  --role="roles/aiplatform.user"
+
+# For Cloud Run — the Cloud Run service account
+gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+  --member="serviceAccount:YOUR_SA@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/aiplatform.user"
+```
+
+#### Step 4 — Set the env var
+
+In `.env` (local) or Cloud Run environment:
+
+```bash
+VERTEX_AI_REASONING_ENGINE_ID=1234567890123456789
+```
+
+Comment out or remove `SESSION_PERSIST_DIR` — when `VERTEX_AI_REASONING_ENGINE_ID` is set it takes priority.
+
+#### Step 5 — Restart and verify
+
+```bash
+# Local
+uv run python -m bot.bot
+# Logs should show:
+# [adk] Using VertexAiSessionService (engine: 1234567890123456789)
+
+# Docker
+docker compose up -d
+docker compose logs | grep "VertexAi\|session"
+```
+
+---
+
+### Tier 2 — File-based persistence (single VM / local dev)
+
+Sessions are written as JSON files to a local directory. Works without any GCP setup.
+
+Add to `.env`:
+```bash
+SESSION_PERSIST_DIR=/data/aura-sessions
+```
+
+For Docker, mount a host volume so data survives container replacement:
+
+```yaml
+# docker-compose.yml volumes section:
+volumes:
+  - /data/aura-sessions:/data/aura-sessions
+```
+
+Logs will show:
+```
+[adk] Using FileSessionService — sessions persist to /data/aura-sessions
+```
+
+---
+
 ## Cloud Deployment (Google Cloud Run)
 
 ### One-click deploy
@@ -206,9 +339,30 @@ terraform apply
 2. Pushes `:<commit-sha>` and `:latest` to Artifact Registry
 3. Rolls out the new image to Cloud Run
 
-To enable the trigger, update the `github.owner` value in `infra/main.tf` before running `terraform apply`.
+The trigger is now configured and managed through Terraform in [infra/main.tf](infra/main.tf), using the `aura-deploy` service account.
 
-For the full operational runbook, see [OPERATION_MANAGE.md](OPERATION_MANAGE.md).
+For the full operational runbook, see [docs/OPERATION_MANAGE.md](docs/OPERATION_MANAGE.md).
+
+### Hackathon Requirement Check
+
+What is already covered in this repo:
+1. Real-time multimodal agent: Aura uses live voice input and live voice/text output with interruption handling.
+2. Mandatory Google AI stack: the project uses both Google ADK and Gemini Live on Vertex AI.
+3. Google Cloud hosting: the backend is deployed on Cloud Run and uses Artifact Registry, Secret Manager, Cloud Build, and Vertex AI.
+4. Reproducibility: local spin-up and cloud deployment instructions are included in this README and [docs/OPERATION_MANAGE.md](docs/OPERATION_MANAGE.md).
+5. Architecture documentation: see the Architecture section here and [docs/Aura_Design_Doc.md](docs/Aura_Design_Doc.md).
+
+What still needs to be prepared for submission:
+1. A short demo video under 4 minutes.
+2. A proof-of-Google-Cloud-deployment artifact for judges:
+  either a short screen recording of Cloud Run / Cloud Build in GCP, or explicit links to files such as [infra/main.tf](infra/main.tf), [cloudbuild.yaml](cloudbuild.yaml), and [bot/pipelines/voice.py](bot/pipelines/voice.py).
+3. Final submission text describing features, technologies used, and key learnings. A draft is included in [docs/SUBMISSION_DRAFT.md](docs/SUBMISSION_DRAFT.md).
+
+Optional, not required for submission:
+1. Custom domain setup such as `aura.veloxpro.in`.
+2. A rendered architecture image for easier judge review.
+
+For the final implementation architecture, see [docs/Aura_Design_Doc.md](docs/Aura_Design_Doc.md).
 
 ---
 
@@ -223,6 +377,8 @@ See [`.env.example`](.env.example) for the full list with descriptions. Key vari
 | `LIVEKIT_API_SECRET` | ✓ | LiveKit API secret |
 | `GOOGLE_CLOUD_PROJECT_ID` | ✓* | GCP project for Vertex AI |
 | `GOOGLE_CLOUD_LOCATION` | — | GCP region (default: `us-central1`) |
+| `VERTEX_AI_REASONING_ENGINE_ID` | — | Numeric ID of Vertex AI Reasoning Engine for cross-deployment session persistence (see [Session Persistence](#session-persistence)) |
+| `SESSION_PERSIST_DIR` | — | Local directory path for file-based session persistence (fallback when Reasoning Engine ID is not set) |
 | `GOOGLE_API_KEY` | ✓* | Google AI Studio key (preview path only) |
 | `GEMINI_LIVE_MODEL` | — | Model name (default: `gemini-live-2.5-flash-native-audio`) |
 | `GEMINI_TEXT_MODEL` | — | Text-only grading/summary model (default: `gemini-2.5-flash`) |
@@ -252,7 +408,7 @@ See [`.env.example`](.env.example) for the full list with descriptions. Key vari
 │       ├── grading_rubric.md # Rubric used by post-call grading
 │       └── system_prompt.md  # Aura persona and interview guidelines
 ├── frontend/
-│   ├── public/demo.html      # Voice UI (real-time transcript + metrics)
+│   ├── public/demo.html      # Voice UI (real-time transcript, metrics, summary, progress)
 │   └── src/App.tsx           # Vite/React wrapper
 ├── infra/
 │   ├── main.tf               # Cloud Run, Artifact Registry, IAM, Secret Manager

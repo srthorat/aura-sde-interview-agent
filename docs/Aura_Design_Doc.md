@@ -31,23 +31,24 @@
 │  │       │  rtc.AudioStream (PCM16 @ 16 kHz)                        │   │
 │  │       ▼                                                           │   │
 │  │  _send_audio_loop ──────────────────────────────────────────────► │   │
-│  │       │                           google-genai aio.live           │   │
-│  │       ├─ Silero VAD (UI hints only)                              │   │
+│  │       │                       ADK Runner.run_live +               │   │
+│  │       ├─ Silero VAD (UI hints only)  LiveRequestQueue            │   │
 │  │       │                           ┌──────────────────────────┐   │   │
 │  │       └──────────────────────────►│  Gemini Live session      │   │   │
 │  │                                   │  gemini-live-2.5-flash    │   │   │
 │  │  ◄────────────────────────────────│  -native-audio            │   │   │
-│  │  _recv_loop                       │  (Vertex AI, bidi stream) │   │   │
+│  │  _process_events                  │  (Vertex AI, bidi stream) │   │   │
 │  │  ├─ audio data ──► rtc.AudioSource│                           │   │   │
-│  │  ├─ text turns ──► events/transcript                          │   │   │
-│  │  └─ tool calls ──► dispatch_tool_call ──► LlmAgent tools      │   │   │
+│  │  ├─ text turns ──► transcript + summary state                  │   │   │
+│  │  └─ tool calls ──► ADK tool callbacks + LlmAgent tools         │   │   │
 │  │                                   └──────────────────────────┘   │   │
 │  └──────────────────────────────────────────────────────────────────┘   │
 │                                                                          │
 │  Google ADK                                                              │
-│  ├─ LlmAgent (name="aura", model="gemini-2.5-flash", tools=[get_interview_question, record_answer_note, get_session_summary, get_current_time])         │
+│  ├─ LlmAgent (name="aura") with interview tools and guardrails          │
+│  ├─ Runner.run_live(...) for audio + tool orchestration                  │
 │  ├─ VertexAiSessionService ──► Vertex AI Agent Engine (per-user history) │
-│  └─ dispatch_tool_call(name, args) → result dict                         │
+│  └─ Persisted state snapshots for notes, grades, and round continuity    │
 │                                                                          │
 └──────────────────────────────────────────────────────────────────────────┘
               │
@@ -69,14 +70,15 @@
 
 ### 1. Google ADK (mandatory requirement)
 
-`google-adk` is used as the orchestration layer:
-- `LlmAgent` defines the agent name, model, system instruction, and tool set
-- `VertexAiSessionService` provides per-user persistent conversation history via Vertex AI Agent Engine — no Redis, no PostgreSQL
-- History from previous sessions is injected into the Gemini Live system instruction before each call, giving Aura genuine long-term memory
+`google-adk` is the orchestration layer for the final system:
+- `LlmAgent` defines Aura's instruction set, tool surface, and interview behavior
+- `Runner.run_live()` handles the live Gemini session and tool execution loop
+- `VertexAiSessionService` provides per-user persistent session history via Vertex AI Agent Engine
+- Aura also persists structured state snapshots for asked questions, rubric grades, answer notes, and round continuity so feedback survives restarts without introducing another database
 
 ### 2. Gemini Live native audio via `google-genai`
 
-`genai.aio.live.connect()` opens a bidirectional gRPC stream directly to Gemini Live on Vertex AI. This gives:
+Gemini Live is used through the ADK live runner on Vertex AI. This gives:
 - Server-side voice activity detection for actual turn control
 - Native barge-in / interruption handling
 - Sub-300 ms first-audio-output latency
@@ -94,16 +96,20 @@ LiveKit handles the browser-to-server WebRTC plumbing:
 
 ### 4. Tool dispatch during live audio
 
-Four interview tools are declared as `FunctionDeclaration` objects to the Gemini Live session:
+Aura now uses a larger tool surface during live audio:
 
 | Tool | Purpose |
 |---|---|
+| `get_current_time` | Provides answer-timing signals to the candidate |
 | `get_interview_question` | Pulls a question by round + category from the built-in question bank |
 | `record_answer_note` | Saves a structured strength/weakness note to session memory |
 | `get_session_summary` | Returns a spoken performance summary across completed rounds |
-| `get_current_time` | Provides answer-timing signals to the candidate |
+| `submit_rubric_grade` | Captures evidence-based rubric grades continuously during the interview |
+| `get_rubric_report` | Returns the rubric report used for end-of-round and end-of-call feedback |
+| `get_round_scorecard` | Produces a spoken 1-4 round score with top strength and focus area |
+| `end_conversation` | Gracefully ends the session only after explicit user intent |
 
-When Gemini emits a `tool_call` event mid-stream, `dispatch_tool_call()` runs the matching Python function and returns a `FunctionResponse` — all within the live audio session, with zero interruption to the audio flow.
+ADK tool callbacks set per-session context before each tool call, so the live model reads and writes the correct candidate state during the interview. This makes spoken round scoring and post-call summaries consistent with the same in-memory and persisted state.
 
 ### 5. Cloud Run + Terraform IaC
 
@@ -120,16 +126,20 @@ When Gemini emits a `tool_call` event mid-stream, `dispatch_tool_call()` runs th
 1. User opens browser → POST /livekit/session
 2. Backend mints user token + bot token, spawns AuraVoiceSession task
 3. AuraVoiceSession:
-   a. Loads ADK session from VertexAiSessionService (prior history)
+   a. Creates isolated live session state and restores prior named-user state if available
    b. Connects LiveKit room (both user and bot)
-   c. Opens Gemini Live bidi stream with system instruction + injected history + tools
+   c. Starts `Runner.run_live()` with Gemini Live, tool callbacks, and Vertex-backed session storage
    d. Publishes bot audio track to LiveKit room
    e. Sends opening greeting to Gemini Live
    f. Runs concurrently:
       - _send_audio_loop: Browser PCM16 → Gemini Live (100 ms chunks, idle timeout)
-      - _recv_loop: Gemini Live audio → LiveKit; tool calls → dispatch; text → events
+      - _process_events: Gemini Live audio → LiveKit; transcripts/events → frontend; tool results → live state
       - Timeout watchdog (max call duration)
-4. On session end: new turns appended to VertexAiSessionService
+4. On session end:
+   - auto-grading fills any missing rubric evidence
+   - a narrative summary is generated
+   - a final state snapshot is persisted for named users
+   - call summary is sent to the frontend and optional webhook
 ```
 
 ---
@@ -169,16 +179,20 @@ When Gemini emits a `tool_call` event mid-stream, `dispatch_tool_call()` runs th
 
 ### Bridging ADK + Gemini Live
 
-Google ADK's `Runner` is designed for synchronous text/function turn loops. Gemini Live's `aio.live` API is an async bidirectional audio stream. These two paradigms needed to be composed without coupling:
+The main challenge was using ADK's live runner as the source of truth while still keeping the transport and UX responsive:
 
-- ADK tools are declared to the Gemini Live session as `FunctionDeclaration` objects, mirroring the ADK `LlmAgent`'s tool registry
-- Tool calls arrive as `message.tool_call` events mid-stream and are dispatched via `dispatch_tool_call()`, which delegates to the same Python functions the ADK agent uses
-- ADK sessions (`VertexAiSessionService`) are used only for persistent history — they do not drive the live audio loop
+- LiveKit remains responsible for browser audio transport and immediate playback control
+- ADK `Runner.run_live()` remains responsible for tool invocation, agent instruction enforcement, and session persistence
+- Silero VAD is intentionally limited to UI hints and instant barge-in responsiveness, while Gemini server-side VAD remains the authority for turn boundaries
 
-### Memory injection without a text turn
+### Durable structured memory without another database
 
-`VertexAiSessionService` stores full conversation history — which round the candidate is on, questions asked, and `record_answer_note` entries. Gemini Live doesn't have a "prepend history" API, so the last 20 ADK session events are formatted as a plain-text context block and appended to the system instruction before opening the live session. This gives genuine cross-session continuity: Aura knows exactly where the candidate left off without an extra API call.
+Conversation history already lives in `VertexAiSessionService`, but interview-grade structured state originally lived only in process memory. The final design persists compact state snapshots into the same ADK session history and restores them for named users on the next session. This keeps the architecture hackathon-simple while still preserving notes, grades, and round continuity across restarts.
 
-### PCM16 resampling on the hot path
+### Controlled history reuse instead of raw reinjection
 
-LiveKit delivers audio at whatever sample rate the browser produces (typically 48 kHz stereo). Gemini Live requires 16 kHz mono. NumPy linear interpolation handles resampling in-process with negligible latency (<0.5 ms per 100 ms chunk on a standard Cloud Run instance).
+Earlier iterations relied on reusing raw prior turns. The final implementation compresses prior context and avoids reinjecting synthetic persistence events into the model prompt. This preserves continuity without wasting prompt budget or polluting the conversation with implementation details.
+
+### Audio on the hot path
+
+LiveKit is configured to deliver 16 kHz mono audio directly into the Gemini path, avoiding unnecessary extra conversion logic in the hot loop and keeping the runtime simple enough for Cloud Run.

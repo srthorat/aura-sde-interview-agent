@@ -237,14 +237,58 @@ html,body {
 .partial-dot{width:5px;height:5px;border-radius:50%;background:var(--accent);flex-shrink:0;animation:blink 1s infinite;}
 .partial-text{font-size:12.5px;color:var(--tx3);font-style:italic;}
 
+.metrics-wrap {
+  flex-shrink:0;
+  border-top:1px solid var(--border);
+  background:var(--bg);
+}
+.metrics-toggle {
+  display:flex;
+  align-items:center;
+  gap:6px;
+  padding:5px 10px;
+  cursor:pointer;
+  user-select:none;
+  border:none;
+  background:none;
+  width:100%;
+  text-align:left;
+}
+.metrics-toggle-label {
+  font-size:9px;
+  font-family:'Geist Mono',monospace;
+  text-transform:uppercase;
+  letter-spacing:.07em;
+  color:var(--tx3);
+  flex:1;
+}
+.metrics-toggle-arrow {
+  font-size:9px;
+  color:var(--tx3);
+  transition:transform .2s;
+  line-height:1;
+}
+.metrics-wrap.open .metrics-toggle-arrow { transform:rotate(180deg); }
+.card-footer {
+  flex-shrink:0;
+  border-top:1px solid var(--border);
+  padding:7px 14px;
+  font-size:9.5px;
+  font-family:'Geist Mono',monospace;
+  color:var(--tx3);
+  text-align:center;
+  letter-spacing:.04em;
+}
 .metrics {
   display:flex;
   align-items:stretch;
-  border-top:1px solid var(--border);
   background:var(--bg);
   flex-shrink:0;
-  min-height:74px;
+  overflow:hidden;
+  max-height:0;
+  transition:max-height .25s cubic-bezier(.4,0,.2,1);
 }
+.metrics-wrap.open .metrics { max-height:120px; }
 .m-tokens {display:flex;align-items:stretch;border-left:1px solid var(--border);}
 .m-tokens .m-cell {min-width:60px;}
 .m-tokens .m-cell + .m-cell {border-left:1px solid var(--border);}
@@ -288,7 +332,8 @@ html,body {
   .timer{font-size:15px;}
   .state-label{font-size:11px;}
   .action-btn{width:auto;padding:8px 18px;white-space:nowrap;flex-shrink:0;}
-  .metrics{overflow-x:auto;flex-wrap:nowrap;height:60px;}
+  .metrics{overflow-x:auto;flex-wrap:nowrap;}
+  .metrics-wrap.open .metrics{max-height:70px;}
   .m-cell{min-width:52px;flex-shrink:0;}
   .m-pipeline{flex-shrink:0;}
   .m-tokens{flex-shrink:0;}
@@ -387,6 +432,29 @@ html,body {
 }
 .modal-id-check-btn:hover:not(:disabled){border-color:var(--accent);color:var(--accent);background:rgba(29,78,216,.04);}
 .modal-id-check-btn:disabled{opacity:.38;cursor:not-allowed;}
+
+.modal-round-section {
+  border-radius:14px;border:1px solid var(--border2);
+  padding:16px 18px;display:flex;flex-direction:column;gap:8px;
+  background:var(--bg);margin-bottom:14px;
+}
+.modal-round-row{display:flex;gap:6px;align-items:center;}
+.modal-round-stack{display:flex;flex-direction:column;gap:8px;}
+.modal-round-select{
+  width:100%;padding:9px 12px;border-radius:9px;
+  border:1px solid var(--border2);background:var(--surface);
+  font-family:'Geist',sans-serif;font-size:13px;color:var(--tx1);
+  outline:none;transition:border-color .2s;
+}
+.modal-round-select:focus{border-color:var(--accent);}
+.modal-topic-row{display:flex;gap:6px;align-items:center;}
+.modal-topic-input{
+  width:100%;padding:9px 12px;border-radius:9px;
+  border:1px solid var(--border2);background:var(--surface);
+  font-family:'Geist',sans-serif;font-size:13px;color:var(--tx1);
+  outline:none;transition:border-color .2s;
+}
+.modal-topic-input:focus{border-color:var(--accent);}
 
 /* History badge */
 .modal-badge{min-height:18px;display:flex;align-items:center;gap:6px;font-size:11.5px;font-family:'Geist Mono',monospace;}
@@ -490,6 +558,25 @@ html,body {
 .grade-chip.weak{border-color:rgba(185,28,28,.2);background:rgba(185,28,28,.04);}
 .grade-chip .chip-label{color:var(--tx2);}
 
+/* Candidate progress */
+.progress-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;}
+.progress-stat{
+  background:var(--bg);border:1px solid var(--border2);border-radius:12px;
+  padding:12px 14px;display:flex;flex-direction:column;gap:4px;
+}
+.progress-stat-label{font-size:10px;font-family:'Geist Mono',monospace;color:var(--tx3);text-transform:uppercase;letter-spacing:.06em;}
+.progress-stat-value{font-size:18px;font-weight:600;color:var(--tx1);letter-spacing:-.02em;}
+.progress-stat-sub{font-size:11px;color:var(--tx2);line-height:1.35;}
+.progress-list{display:flex;flex-direction:column;gap:8px;}
+.progress-item{
+  background:var(--bg);border:1px solid var(--border2);border-radius:12px;
+  padding:11px 13px;display:flex;justify-content:space-between;gap:12px;align-items:flex-start;
+}
+.progress-item-main{display:flex;flex-direction:column;gap:3px;}
+.progress-item-title{font-size:12.5px;font-weight:500;color:var(--tx1);}
+.progress-item-sub{font-size:11.5px;color:var(--tx2);line-height:1.35;}
+.progress-score{font-size:11px;font-family:'Geist Mono',monospace;color:var(--tx2);white-space:nowrap;}
+
 /* Answer notes */
 .note-card{
   background:var(--bg);border:1px solid var(--border2);
@@ -512,6 +599,47 @@ html,body {
 /* Empty state */
 .summary-empty{font-size:12.5px;color:var(--tx3);font-style:italic;}
 
+/* Section divider between This Session / Overall */
+.summary-section-divider{
+  display:flex;align-items:center;gap:10px;
+  margin:4px 0 2px;
+}
+.summary-section-divider-line{flex:1;height:1px;background:var(--border);}
+.summary-section-divider-label{
+  font-size:9.5px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--tx3);font-family:'Geist Mono',monospace;white-space:nowrap;
+  padding:2px 8px;border-radius:10px;border:1px solid var(--border2);
+  background:var(--bg);
+}
+
+/* Live rubric bar (visible during active session) */
+.live-grades-bar{
+  border-top:1px solid var(--border);
+  padding:8px 16px;background:var(--bg);
+  display:flex;align-items:center;gap:10px;flex-shrink:0;
+  flex-wrap:wrap;min-height:38px;
+}
+.live-grades-label{
+  font-size:9px;font-weight:500;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--tx3);font-family:'Geist Mono',monospace;white-space:nowrap;flex-shrink:0;
+}
+.live-grades-chips{display:flex;flex-wrap:wrap;gap:5px;flex:1;}
+.live-grade-chip{
+  display:inline-flex;align-items:center;gap:4px;
+  padding:3px 8px 3px 6px;border-radius:20px;
+  border:1px solid var(--border2);background:var(--surface);
+  font-size:10.5px;font-family:'Geist Mono',monospace;
+  animation:fadein .2s ease;
+}
+.live-grade-chip .chip-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0;}
+.live-grade-chip.strong .chip-dot{background:var(--green);}
+.live-grade-chip.strong{border-color:rgba(21,128,61,.22);background:rgba(21,128,61,.04);}
+.live-grade-chip.mixed .chip-dot{background:var(--amber);}
+.live-grade-chip.mixed{border-color:rgba(180,83,9,.22);background:rgba(180,83,9,.04);}
+.live-grade-chip.weak .chip-dot{background:var(--red);}
+.live-grade-chip.weak{border-color:rgba(185,28,28,.22);background:rgba(185,28,28,.04);}
+.live-grade-chip .chip-label{color:var(--tx2);}
+
 .summary-footer{
   padding:16px 24px;border-top:1px solid var(--border);
   display:flex;gap:8px;flex-shrink:0;
@@ -531,6 +659,7 @@ html,body {
 
 @media (max-width:640px){
   .summary-card{border-radius:20px 20px 0 0;width:100%;max-height:85vh;}
+  .progress-grid{grid-template-columns:1fr;}
 }
 </style>
 </head>
@@ -609,11 +738,21 @@ html,body {
         <span class="partial-text" id="partial-text"></span>
       </div>
 
+      <!-- Live rubric grades — shown during active session as Aura grades each answer -->
+      <div class="live-grades-bar" id="live-grades-bar" style="display:none">
+        <span class="live-grades-label">Live Grades</span>
+        <div class="live-grades-chips" id="live-grades-chips"></div>
+      </div>
 
     </div>
   </div>
 
-  <div class="metrics">
+  <div class="metrics-wrap" id="metrics-wrap">
+  <button class="metrics-toggle" id="metrics-toggle" aria-expanded="false" aria-controls="metrics-panel" title="Toggle debug metrics">
+    <span class="metrics-toggle-label">Debug Metrics</span>
+    <span class="metrics-toggle-arrow">▲</span>
+  </button>
+  <div class="metrics" id="metrics-panel" role="region">
     <div class="m-cell">
       <span class="m-label">UI ↔ Server</span>
       <div class="m-numrow">
@@ -669,7 +808,13 @@ html,body {
         <div class="m-track"><div class="m-fill" id="mb-tok-session" style="background:var(--tx3)"></div></div>
       </div>
     </div>
+    </div><!-- /metrics -->
+  </div><!-- /metrics-wrap -->
+
+  <div class="card-footer">
+    We built what we wished existed &nbsp;&middot;&nbsp; Made in India with &#10084;&#65039; for Google
   </div>
+
 </div>
 
 <div id="audio-host" aria-hidden="true">
@@ -685,6 +830,53 @@ html,body {
       <span class="modal-hdr-sub">/ Google SDE Interview Coach</span>
     </div>
     <div class="modal-body">
+
+      <div class="modal-round-section">
+        <span class="modal-id-label">Interview Track</span>
+        <span class="modal-id-desc">Choose the fast 4-round demo path or an advanced 6-round Google-style loop</span>
+        <div class="modal-round-row" style="margin-bottom:10px;">
+          <select class="modal-round-select" id="modal-track-select">
+            <option value="compressed" selected>4-Round Compressed</option>
+            <option value="advanced">6-Round Google-Style</option>
+          </select>
+        </div>
+        <span class="modal-id-label">Starting Focus</span>
+        <span class="modal-id-desc">Pick a round and difficulty — Aura will start there with pre-selected questions</span>
+        <div class="modal-round-stack">
+          <div class="modal-round-row">
+            <select class="modal-round-select" id="modal-round-select"></select>
+            <select class="modal-round-select" id="modal-difficulty-select" style="max-width:118px;flex-shrink:0">
+              <option value="" selected>Select difficulty</option>
+              <option value="easy">Easy</option>
+              <option value="medium">Medium</option>
+              <option value="hard">Hard</option>
+            </select>
+          </div>
+          <div class="modal-topic-row" id="modal-topic-row">
+            <input class="modal-topic-input" id="modal-topic-input" type="text" maxlength="32" placeholder="Optional topic hint, e.g. stack, cache, leadership, conflict" list="coding-topic-hints" autocomplete="off" spellcheck="false" />
+            <datalist id="coding-topic-hints">
+              <option value="array"></option>
+              <option value="string"></option>
+              <option value="hash map"></option>
+              <option value="stack"></option>
+              <option value="queue"></option>
+              <option value="linked list"></option>
+              <option value="tree"></option>
+              <option value="graph"></option>
+              <option value="binary search"></option>
+              <option value="dynamic programming"></option>
+              <option value="recursion"></option>
+              <option value="sorting"></option>
+              <option value="leadership"></option>
+              <option value="conflict"></option>
+              <option value="estimation"></option>
+              <option value="scalability"></option>
+              <option value="caching"></option>
+              <option value="observability"></option>
+            </datalist>
+          </div>
+        </div>
+      </div>
 
       <!-- Quick Start -->
       <div class="modal-quick">
@@ -770,12 +962,96 @@ const userNameBadge = el('user-name-badge');
 
 // ── Modal ────────────────────────────────────────────────────
 let sessionUserId = 'anonymous';
+let sessionTrackPreset = 'compressed';
+let sessionRoundHint = '';
+let sessionDifficultyHint = '';
+let sessionTopicHint = '';
 
 const modalOverlay  = el('session-modal');
 const modalIdInput  = el('modal-id-input');
 const modalCheckBtn = el('modal-check-btn');
 const modalBadge    = el('modal-badge');
 const modalConnectBtn = el('modal-connect-btn');
+const modalTrackSelect = el('modal-track-select');
+const modalRoundSelect = el('modal-round-select');
+const modalDifficultySelect = el('modal-difficulty-select');
+const modalTopicInput = el('modal-topic-input');
+
+const TRACK_ROUND_OPTIONS = {
+  compressed: [
+    { value: '', label: 'Ask me when we start' },
+    { value: 'behavioural', label: 'Behavioural' },
+    { value: 'coding', label: 'Coding' },
+    { value: 'system_design', label: 'System Design' },
+    { value: 'targeted_debrief', label: 'Targeted Debrief' },
+  ],
+  advanced: [
+    { value: '', label: 'Ask me when we start' },
+    { value: 'googliness', label: 'Googliness (Behavioural)' },
+    { value: 'coding_1', label: 'Coding 1 (Algorithms & Data Structures)' },
+    { value: 'coding_2', label: 'Coding 2 (Algorithms & Data Structures)' },
+    { value: 'system_design', label: 'System Design' },
+    { value: 'debugging', label: 'Debugging / Code Review (Practical Engineering)' },
+    { value: 'targeted_debrief', label: 'Targeted Debrief' },
+  ],
+};
+
+function renderRoundOptions() {
+  if (!modalRoundSelect) return;
+  const options = TRACK_ROUND_OPTIONS[sessionTrackPreset] || TRACK_ROUND_OPTIONS.compressed;
+  const previous = sessionRoundHint;
+  modalRoundSelect.innerHTML = options.map((option) => `<option value="${escHtml(option.value)}">${escHtml(option.label)}</option>`).join('');
+  const stillExists = options.some((option) => option.value === previous);
+  sessionRoundHint = stillExists ? previous : '';
+  modalRoundSelect.value = sessionRoundHint;
+}
+
+function updateCandidateConnectState() {
+  if (!modalConnectBtn) return;
+  const isNamedCandidate = !!sessionUserId && sessionUserId !== 'anonymous' && !sessionUserId.startsWith('anon_');
+  if (!isNamedCandidate) {
+    modalConnectBtn.disabled = true;
+    return;
+  }
+  modalConnectBtn.textContent = `Connect as ${sessionUserId}`;
+  modalConnectBtn.disabled = !(sessionRoundHint && sessionDifficultyHint);
+}
+
+modalTrackSelect?.addEventListener('change', () => {
+  sessionTrackPreset = (modalTrackSelect.value || 'compressed').trim();
+  renderRoundOptions();
+});
+
+modalRoundSelect?.addEventListener('change', () => {
+  sessionRoundHint = (modalRoundSelect.value || '').trim();
+  updateCandidateConnectState();
+});
+modalDifficultySelect?.addEventListener('change', () => {
+  sessionDifficultyHint = (modalDifficultySelect.value || '').trim();
+  updateCandidateConnectState();
+});
+modalTopicInput?.addEventListener('input', () => {
+  sessionTopicHint = (modalTopicInput.value || '').trim();
+});
+
+// Populate the round dropdown immediately so the first modal render is never blank.
+renderRoundOptions();
+
+// Debounced pre-warm: fires /api/prewarm as soon as a plausible candidate ID
+// is typed (≥3 chars, 500 ms debounce). This gives the backend 2-5 extra
+// seconds to create the Vertex AI session before the user clicks Join,
+// reducing named-candidate startup from 4-6 s to ~2-3 s.
+let _prewarmTimer = null;
+function _schedulePrewarm(uid) {
+  clearTimeout(_prewarmTimer);
+  if (!uid || uid.length < 3) return;
+  _prewarmTimer = setTimeout(() => {
+    const normalized = uid.toLowerCase().replace(/[^a-z0-9_-]/g, '-').slice(0, 64);
+    if (normalized && normalized !== 'anonymous') {
+      fetch(`/api/prewarm?user_id=${encodeURIComponent(normalized)}`, { cache: 'no-store' }).catch(() => {});
+    }
+  }, 500);
+}
 
 modalIdInput?.addEventListener('input', () => {
   const val = modalIdInput.value.trim();
@@ -785,6 +1061,8 @@ modalIdInput?.addEventListener('input', () => {
   modalBadge.className = 'modal-badge';
   modalBadge.innerHTML = '';
   modalConnectBtn.textContent = val ? `Connect as ${val}` : 'Connect';
+  // Kick off pre-warm early so Vertex session is ready by the time user clicks Join
+  _schedulePrewarm(val);
 });
 
 modalIdInput?.addEventListener('keydown', (e) => {
@@ -815,13 +1093,11 @@ async function checkCandidateId() {
       setModalBadge('new', 'New candidate — starting fresh');
     }
     sessionUserId = uid;
-    modalConnectBtn.textContent = `Connect as ${uid}`;
-    modalConnectBtn.disabled = false;
+    updateCandidateConnectState();
   } catch (_) {
     setModalBadge('new', 'Could not check history — will start fresh');
     sessionUserId = uid;
-    modalConnectBtn.textContent = `Connect as ${uid}`;
-    modalConnectBtn.disabled = false;
+    updateCandidateConnectState();
   } finally {
     modalCheckBtn.disabled = false;
   }
@@ -831,6 +1107,16 @@ function showModal() {
   modalOverlay.classList.remove('hidden');
   // Reset modal input state
   if (modalIdInput) { modalIdInput.value = ''; }
+  if (modalTrackSelect) { modalTrackSelect.value = 'compressed'; }
+  sessionTrackPreset = 'compressed';
+  renderRoundOptions();
+  if (modalRoundSelect) { modalRoundSelect.value = ''; }
+  if (modalDifficultySelect) { modalDifficultySelect.value = ''; }
+  if (modalTopicInput) { modalTopicInput.value = ''; }
+  sessionRoundHint = '';
+  sessionDifficultyHint = '';
+  sessionTopicHint = '';
+  sessionUserId = 'anonymous';
   if (modalCheckBtn) { modalCheckBtn.disabled = true; }
   if (modalConnectBtn) { modalConnectBtn.disabled = true; modalConnectBtn.textContent = 'Connect'; }
   if (modalBadge) { modalBadge.className = 'modal-badge'; modalBadge.innerHTML = ''; }
@@ -841,6 +1127,10 @@ function hideModal() {
 }
 
 function startAnonymous() {
+  if (!sessionDifficultyHint) {
+    sessionDifficultyHint = 'medium';
+    if (modalDifficultySelect) { modalDifficultySelect.value = 'medium'; }
+  }
   // Generate a unique short ID per anonymous session so sessions never bleed into each other
   sessionUserId = 'anon_' + Math.random().toString(36).slice(2, 9);
   hideModal();
@@ -849,12 +1139,33 @@ function startAnonymous() {
 
 function startAsCandidate() {
   if (!sessionUserId || sessionUserId === 'anonymous') return;
+  if (!sessionRoundHint || !sessionDifficultyHint) {
+    setModalBadge('new', 'Select both round and difficulty for named candidate sessions');
+    updateCandidateConnectState();
+    return;
+  }
   hideModal();
   void connect();
 }
 
 function getCandidateId() {
   return sessionUserId || 'anonymous';
+}
+
+function getSelectedRoundHint() {
+  return sessionRoundHint || '';
+}
+
+function getSelectedDifficultyHint() {
+  return sessionDifficultyHint || '';
+}
+
+function getSelectedTrackPreset() {
+  return sessionTrackPreset || 'compressed';
+}
+
+function getSelectedTopicHint() {
+  return sessionTopicHint || '';
 }
 
 const { Room, RoomEvent, Track, ConnectionState } = window.LivekitClient;
@@ -1027,6 +1338,13 @@ function resetMetrics() {
   sessionTokens = 0;
   const bd = el('m-breakdown');
   if (bd) bd.innerHTML = '';
+}
+
+function resetLiveGrades() {
+  const bar = el('live-grades-bar');
+  const chips = el('live-grades-chips');
+  if (chips) chips.innerHTML = '';
+  if (bar) bar.style.display = 'none';
 }
 
 async function pingOnce() {
@@ -1427,12 +1745,28 @@ function handleServerEvent(message) {
       }
       setAppState('speaking');
       break;
-    case 'bot-stopped-speaking':
+    case 'bot-stopped-speaking': {
+      // Commit any agent-interim that is still tagged with its ID.
+      // This happens on interrupted turns: the backend withholds the final
+      // bot-transcription (final_bot=""), so upsertAgentFinal() is never
+      // called and #agent-interim keeps its id.  If we leave it, the next
+      // bot-started-speaking fires clearAgentInterim() and the partial
+      // text disappears.  Committing here (removing the id) means it
+      // survives as a normal committed bubble — and the interruption
+      // handler's clearAgentInterim() becomes a no-op (id already gone).
+      const stoppedInterim = el('agent-interim');
+      if (stoppedInterim) {
+        const stoppedBubble = stoppedInterim.querySelector('.interim-bubble');
+        if (stoppedBubble) stoppedBubble.className = 'bubble';
+        stoppedInterim.removeAttribute('id');
+        currentAgentTranscript = '';
+      }
       botSpeechStartedAt = null;
       botAudioReadyAt = null;
       serverUiCaptured = false;
       setAppState(room ? 'ready' : 'idle');
       break;
+    }
     case 'bot-llm-text': {
       const text = normalizeTranscriptText(message.data?.text || '');
       if (text) showAgentInterim(text);
@@ -1492,6 +1826,26 @@ function handleServerEvent(message) {
       _awaitingSummary = true;
       stateLabel.textContent = 'generating your feedback…';
       break;
+    case 'rubric-update': {
+      const { category, grade, notes } = message.data || {};
+      if (category && grade) {
+        const bar = el('live-grades-bar');
+        const chipsEl = el('live-grades-chips');
+        if (bar && chipsEl) {
+          bar.style.display = 'flex';
+          // Update existing chip for this category, or add a new one
+          const normalized = _normalizeGrade(grade);
+          const existingChip = chipsEl.querySelector(`[data-cat="${CSS.escape(category)}"]`);
+          const chipHtml = `<div class="live-grade-chip ${normalized.cls}" data-cat="${_esc(category)}" title="${_esc(notes || '')}"><div class="chip-dot"></div><span class="chip-label">${_esc(category)}&thinsp;·&thinsp;${_esc(normalized.label)}</span></div>`;
+          if (existingChip) {
+            existingChip.outerHTML = chipHtml;
+          } else {
+            chipsEl.insertAdjacentHTML('beforeend', chipHtml);
+          }
+        }
+      }
+      break;
+    }
     case 'call-summary':
       // Store until handleDisconnect fires
       _pendingSummary = message.data || {};
@@ -1610,6 +1964,7 @@ async function connect() {
   actionBtn.disabled = true;
   clearTranscript();
   resetMetrics();
+  resetLiveGrades();
   _pendingSummary = null;
   _awaitingSummary = false;
   _disconnectHandled = false;
@@ -1633,16 +1988,33 @@ async function connect() {
     } catch (_) {}
 
     const userId = getCandidateId();
+    const trackPreset = getSelectedTrackPreset();
+    const roundHint = getSelectedRoundHint();
+    const difficultyHint = getSelectedDifficultyHint();
+    const topicHint = getSelectedTopicHint();
+    const isAnonSession = !userId || userId === 'anonymous' || userId.startsWith('anon_');
     // Do NOT disable the input — user can update ID during the session
 
     const response = await fetch(SESSION_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ display_name: userId === 'anonymous' ? 'Candidate' : `Candidate ${userId}`, user_id: userId }),
+      body: JSON.stringify({
+        display_name: isAnonSession ? 'Candidate' : userId,
+        user_id: userId,
+        track_preset: trackPreset,
+        round_hint: roundHint,
+        difficulty_hint: difficultyHint,
+        topic_hint: topicHint,
+      }),
     });
 
     if (!response.ok) {
-      throw new Error(`Session bootstrap failed: ${response.status}`);
+      let detail = `Session bootstrap failed: ${response.status}`;
+      try {
+        const errorPayload = await response.json();
+        if (errorPayload?.detail) detail = String(errorPayload.detail);
+      } catch (_) {}
+      throw new Error(detail);
     }
 
     const session = await response.json();
@@ -1735,6 +2107,17 @@ function toggleConnect() {
   }
 }
 
+// ── Debug metrics toggle ──────────────────────────────────
+(function () {
+  const wrap = document.getElementById('metrics-wrap');
+  const btn  = document.getElementById('metrics-toggle');
+  if (!wrap || !btn) return;
+  btn.addEventListener('click', () => {
+    const open = wrap.classList.toggle('open');
+    btn.setAttribute('aria-expanded', String(open));
+  });
+})();
+
 document.addEventListener('keydown', (event) => {
   if (event.code === 'Space' && event.target === document.body) {
     event.preventDefault();
@@ -1821,6 +2204,112 @@ function _fmtDuration(secs) {
 
 function _esc(v) { return escHtml(String(v || '')); }
 
+const _PROGRESS_STORAGE_PREFIX = 'aura-progress:';
+let _lastSavedSummaryFingerprint = '';
+
+function _normalizeGrade(grade) {
+  const key = String(grade || 'mixed').toLowerCase().trim();
+  const mapping = {
+    strong_yes: { cls: 'strong', label: 'Strong Yes', score: 5 },
+    yes: { cls: 'strong', label: 'Yes', score: 4 },
+    mixed: { cls: 'mixed', label: 'Mixed', score: 3 },
+    no: { cls: 'weak', label: 'No', score: 2 },
+    strong_no: { cls: 'weak', label: 'Strong No', score: 1 },
+    strong: { cls: 'strong', label: 'Strong', score: 5 },
+    weak: { cls: 'weak', label: 'Weak', score: 1 },
+  };
+  return mapping[key] || { cls: 'mixed', label: key.replace(/_/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase()), score: 3 };
+}
+
+function _candidateProgressKey() {
+  const candidateId = getCandidateId();
+  if (!candidateId || candidateId === 'anonymous' || candidateId.startsWith('anon_')) return null;
+  return `${_PROGRESS_STORAGE_PREFIX}${candidateId}`;
+}
+
+function _loadCandidateProgress() {
+  const key = _candidateProgressKey();
+  if (!key) return null;
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return { sessions: [] };
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed?.sessions) ? parsed : { sessions: [] };
+  } catch (_) {
+    return { sessions: [] };
+  }
+}
+
+function _buildProgressSnapshot(data) {
+  const gradeEntries = Object.values(data.rubric_grades || {});
+  const scores = gradeEntries.map((entry) => _normalizeGrade(entry.grade).score);
+  const avgScore = scores.length ? Math.round((scores.reduce((sum, value) => sum + value, 0) / scores.length) * 10) / 10 : null;
+  return {
+    fingerprint: JSON.stringify({
+      ended_reason: data.ended_reason || '',
+      duration_secs: data.duration_secs || 0,
+      questions_asked: data.questions_asked || [],
+      rubric_grades: data.rubric_grades || {},
+      narrative_summary: data.narrative_summary || '',
+    }),
+    saved_at: new Date().toISOString(),
+    duration_secs: Number(data.duration_secs || 0),
+    question_count: Array.isArray(data.questions_asked) ? data.questions_asked.length : 0,
+    avg_score: avgScore,
+  };
+}
+
+function _saveCandidateProgress(data) {
+  const key = _candidateProgressKey();
+  if (!key) return null;
+
+  const snapshot = _buildProgressSnapshot(data);
+  if (_lastSavedSummaryFingerprint === snapshot.fingerprint) {
+    return _loadCandidateProgress();
+  }
+
+  const progress = _loadCandidateProgress() || { sessions: [] };
+  if (!progress.sessions.some((session) => session.fingerprint === snapshot.fingerprint)) {
+    progress.sessions.unshift(snapshot);
+    progress.sessions = progress.sessions.slice(0, 8);
+    try {
+      localStorage.setItem(key, JSON.stringify(progress));
+    } catch (_) {
+      return progress;
+    }
+  }
+  _lastSavedSummaryFingerprint = snapshot.fingerprint;
+  return progress;
+}
+
+function _renderCandidateProgress(progress) {
+  const sessions = progress?.sessions || [];
+  if (!sessions.length) return '';
+
+  const withScores = sessions.filter((session) => typeof session.avg_score === 'number');
+  const avgScore = withScores.length
+    ? Math.round((withScores.reduce((sum, session) => sum + session.avg_score, 0) / withScores.length) * 10) / 10
+    : null;
+  const totalQuestions = sessions.reduce((sum, session) => sum + Number(session.question_count || 0), 0);
+  const recent = sessions.slice(0, 3);
+
+  let html = '<div><div class="summary-section-title">Candidate Progress</div>';
+  html += '<div class="progress-grid">';
+  html += `<div class="progress-stat"><div class="progress-stat-label">Sessions</div><div class="progress-stat-value">${sessions.length}</div><div class="progress-stat-sub">completed for this candidate on this browser</div></div>`;
+  html += `<div class="progress-stat"><div class="progress-stat-label">Avg Rubric</div><div class="progress-stat-value">${avgScore == null ? 'n/a' : `${avgScore}/5`}</div><div class="progress-stat-sub">based on saved rubric grades</div></div>`;
+  html += `<div class="progress-stat"><div class="progress-stat-label">Questions</div><div class="progress-stat-value">${totalQuestions}</div><div class="progress-stat-sub">asked across saved sessions</div></div>`;
+  html += '</div>';
+  html += '<div style="margin-top:10px" class="progress-list">';
+  for (const session of recent) {
+    const savedAt = session.saved_at ? new Date(session.saved_at).toLocaleString() : 'unknown';
+    const duration = session.duration_secs ? _fmtDuration(session.duration_secs) : 'n/a';
+    const score = session.avg_score == null ? 'rubric n/a' : `rubric ${session.avg_score}/5`;
+    html += `<div class="progress-item"><div class="progress-item-main"><div class="progress-item-title">${_esc(savedAt)}</div><div class="progress-item-sub">${_esc(duration)} · ${session.question_count || 0} question${session.question_count === 1 ? '' : 's'}</div></div><div class="progress-score">${_esc(score)}</div></div>`;
+  }
+  html += '</div></div>';
+  return html;
+}
+
 function showSummary(data) {
   _hideSummaryLoading();
   const overlay = el('summary-overlay');
@@ -1841,13 +2330,21 @@ function showSummary(data) {
     reasonEl.textContent = data.ended_reason ? (REASON_LABELS[data.ended_reason] || data.ended_reason) : '';
   }
 
-  const grades = data.rubric_grades || {};
-  const notes = data.answer_notes || [];
-  const questions = data.questions_asked || [];
+  const allGrades   = data.rubric_grades || {};
+  const sessionGrades = data.session_grades || allGrades; // backend sends session_grades; fall back to all
+  const priorGrades   = data.prior_grades || {};
+  const notes      = data.answer_notes || [];
+  const questions  = data.questions_asked || [];
+  const historyEnabled = data.history_enabled !== false;
+  const hasPrior   = Object.keys(priorGrades).length > 0;
+  const progress   = _saveCandidateProgress(data);
 
   let html = '';
 
-  // ── AI narrative summary ──
+  // ══ THIS SESSION ══════════════════════════════════════════
+  html += _renderSectionDivider('This Session');
+
+  // AI narrative summary
   if (data.narrative_summary) {
     html += '<div>';
     html += '<div class="summary-section-title">AI Assessment</div>';
@@ -1855,23 +2352,20 @@ function showSummary(data) {
     html += '</div>';
   }
 
-  // ── Rubric grades ──
-  html += '<div><div class="summary-section-title">Rubric Assessment</div>';
-  const gradeEntries = Object.entries(grades);
-  if (gradeEntries.length === 0) {
-    html += '<span class="summary-empty">No rubric grades recorded this session.</span>';
+  // Rubric grades earned THIS session
+  html += '<div><div class="summary-section-title">Rubric Grades — This Session</div>';
+  const sessionGradeEntries = Object.entries(sessionGrades);
+  if (sessionGradeEntries.length === 0) {
+    html += '<span class="summary-empty">No new rubric grades recorded this session.</span>';
   } else {
     html += '<div class="grade-grid">';
-    for (const [cat, d] of gradeEntries) {
-      const g = (d.grade || 'mixed').toLowerCase();
-      const cls = g === 'strong' ? 'strong' : g === 'weak' ? 'weak' : 'mixed';
-      const label = g.charAt(0).toUpperCase() + g.slice(1);
-      html += `<div class="grade-chip ${cls}"><div class="chip-dot"></div><span class="chip-label">${_esc(cat)} · ${_esc(label)}</span></div>`;
+    for (const [cat, d] of sessionGradeEntries) {
+      const normalized = _normalizeGrade(d.grade);
+      html += `<div class="grade-chip ${normalized.cls}"><div class="chip-dot"></div><span class="chip-label">${_esc(cat)} · ${_esc(normalized.label)}</span></div>`;
     }
     html += '</div>';
-    // Grade note tooltips (one-liner per category)
     html += '<div style="margin-top:10px;display:flex;flex-direction:column;gap:4px;">';
-    for (const [cat, d] of gradeEntries) {
+    for (const [cat, d] of sessionGradeEntries) {
       if (d.notes) {
         html += `<div style="font-size:11.5px;color:var(--tx2);line-height:1.4;"><span style="font-weight:500">${_esc(cat)}:</span> ${_esc(d.notes)}</div>`;
       }
@@ -1880,7 +2374,7 @@ function showSummary(data) {
   }
   html += '</div>';
 
-  // ── Answer notes ──
+  // Answer feedback
   html += '<div><div class="summary-section-title">Answer Feedback</div>';
   if (notes.length === 0) {
     html += '<span class="summary-empty">No answer notes recorded this session.</span>';
@@ -1895,7 +2389,7 @@ function showSummary(data) {
   }
   html += '</div>';
 
-  // ── Questions asked ──
+  // Questions covered this session
   html += '<div><div class="summary-section-title">Questions Covered</div>';
   if (questions.length === 0) {
     html += '<span class="summary-empty">No questions recorded this session.</span>';
@@ -1908,10 +2402,33 @@ function showSummary(data) {
   }
   html += '</div>';
 
+  if (historyEnabled) {
+    html += _renderSectionDivider('Overall Assessment');
+
+    const allGradeEntries = Object.entries(allGrades);
+    if (hasPrior && allGradeEntries.length > 0) {
+      html += '<div><div class="summary-section-title">Cumulative Rubric — All Sessions</div>';
+      html += '<div class="grade-grid">';
+      for (const [cat, d] of allGradeEntries) {
+        const normalized = _normalizeGrade(d.grade);
+        const isNew = cat in sessionGrades;
+        const badge = isNew ? '' : `&thinsp;<span style="font-size:9px;opacity:.6">(prior)</span>`;
+        html += `<div class="grade-chip ${normalized.cls}"><div class="chip-dot"></div><span class="chip-label">${_esc(cat)} · ${_esc(normalized.label)}${badge}</span></div>`;
+      }
+      html += '</div></div>';
+    }
+
+    html += _renderCandidateProgress(progress);
+  }
+
   body.innerHTML = html;
   overlay.classList.remove('hidden');
   // Store raw data for export
   overlay._summaryData = data;
+}
+
+function _renderSectionDivider(label) {
+  return `<div class="summary-section-divider"><div class="summary-section-divider-line"></div><div class="summary-section-divider-label">${_esc(label)}</div><div class="summary-section-divider-line"></div></div>`;
 }
 
 function closeSummary() {
@@ -1919,7 +2436,9 @@ function closeSummary() {
   if (overlay) overlay.classList.add('hidden');
   _pendingSummary = null;
   _awaitingSummary = false;
+  _lastSavedSummaryFingerprint = '';
   if (_summaryFallbackTimer) { clearTimeout(_summaryFallbackTimer); _summaryFallbackTimer = null; }
+  resetLiveGrades();
   showModal();
 }
 
@@ -1939,16 +2458,30 @@ function downloadSummary() {
     lines.push('');
   }
 
-  const grades = data.rubric_grades || {};
-  lines.push('=== Rubric Grades ===');
-  if (Object.keys(grades).length === 0) {
+  // This-session grades
+  const sessionGrades = data.session_grades || data.rubric_grades || {};
+  lines.push('=== This Session — Rubric Grades ===');
+  if (Object.keys(sessionGrades).length === 0) {
     lines.push('None recorded.');
   } else {
-    for (const [cat, d] of Object.entries(grades)) {
+    for (const [cat, d] of Object.entries(sessionGrades)) {
       lines.push(`  ${cat}: ${(d.grade || '').toUpperCase()} — ${d.notes || ''}`);
     }
   }
   lines.push('');
+
+  // Overall / cumulative grades (only if different from session)
+  const allGrades = data.rubric_grades || {};
+  const historyEnabled = data.history_enabled !== false;
+  const hasPrior = Object.keys(data.prior_grades || {}).length > 0;
+  if (historyEnabled && hasPrior && Object.keys(allGrades).length > Object.keys(sessionGrades).length) {
+    lines.push('=== Overall — Cumulative Rubric (All Sessions) ===');
+    for (const [cat, d] of Object.entries(allGrades)) {
+      const tag = cat in sessionGrades ? '' : ' (prior session)';
+      lines.push(`  ${cat}: ${(d.grade || '').toUpperCase()} — ${d.notes || ''}${tag}`);
+    }
+    lines.push('');
+  }
 
   const notes = data.answer_notes || [];
   lines.push('=== Answer Feedback ===');
