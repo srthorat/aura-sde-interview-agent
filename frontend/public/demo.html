@@ -1547,7 +1547,17 @@ function upsertUserFinal(text) {
     interim.removeAttribute('id');
     userInterimText = '';
   } else {
-    addMsg('user', content);
+    // If the bot already started its interim/final bubble, insert the user
+    // message BEFORE it so the transcript order is always User → Agent.
+    const agentNode = el('agent-interim') || el('agent-final-current');
+    if (agentNode) {
+      const node = document.createElement('div');
+      node.className = 'msg user';
+      node.innerHTML = `<span class="msg-role">You</span><div class="bubble">${escHtml(content)}</div>`;
+      messages.insertBefore(node, agentNode);
+    } else {
+      addMsg('user', content);
+    }
   }
   messages.scrollTop = messages.scrollHeight;
 }
