@@ -344,24 +344,17 @@ The trigger is now configured and managed through Terraform in [infra/main.tf](i
 
 For the full operational runbook, see [docs/OPERATION_MANAGE.md](docs/OPERATION_MANAGE.md).
 
-### Hackathon Requirement Check
+### Demo & Documentation
 
-What is already covered in this repo:
-1. Real-time multimodal agent: Aura uses live voice input and live voice/text output with interruption handling.
-2. Mandatory Google AI stack: the project uses both Google ADK and Gemini Live on Vertex AI.
-3. Google Cloud hosting: the backend is deployed on Cloud Run and uses Artifact Registry, Secret Manager, Cloud Build, and Vertex AI.
-4. Reproducibility: local spin-up and cloud deployment instructions are included in this README and [docs/OPERATION_MANAGE.md](docs/OPERATION_MANAGE.md).
-5. Architecture documentation: see the Architecture section here and [docs/Aura_Design_Doc.md](docs/Aura_Design_Doc.md).
+**Demo video:**
 
-What still needs to be prepared for submission:
-1. A short demo video under 4 minutes.
+https://github.com/user-attachments/assets/GeminiLiveHackathon.mp4
 
-Already completed:
-- GCP deployment proof: embedded as animated GIF in the [CI/CD](#cicd) section above, showing Cloud Build SUCCESS + Artifact Registry image tagged with the commit SHA + Cloud Run Ready: True.
-- Architecture diagram: embedded in the [Architecture](#architecture) section.
-- Submission text: [docs/SUBMISSION_DRAFT.md](docs/SUBMISSION_DRAFT.md).
+> *If the video does not render above, download it directly:* [docs/GeminiLiveHackathon.mp4](docs/GeminiLiveHackathon.mp4)
 
-For the final implementation architecture, see [docs/Aura_Design_Doc.md](docs/Aura_Design_Doc.md).
+**Pitch deck:** [docs/GeminiLiveHackathon.pptx](docs/GeminiLiveHackathon.pptx)
+
+**Architecture & submission:** [docs/Aura_Design_Doc.md](docs/Aura_Design_Doc.md) · [docs/SUBMISSION_DRAFT.md](docs/SUBMISSION_DRAFT.md)
 
 ---
 
