@@ -348,9 +348,9 @@ For the full operational runbook, see [docs/OPERATION_MANAGE.md](docs/OPERATION_
 
 **Demo video:**
 
-https://github.com/user-attachments/assets/GeminiLiveHackathon.mp4
+[![Aura Demo Video](https://vumbnail.com/1183350669.jpg)](https://vimeo.com/1183350669)
 
-> *If the video does not render above, download it directly:* [docs/GeminiLiveHackathon.mp4](docs/GeminiLiveHackathon.mp4)
+> [Watch the full demo on Vimeo](https://vimeo.com/1183350669) · [Download mp4](docs/GeminiLiveHackathon.mp4)
 
 **Pitch deck:** [docs/GeminiLiveHackathon.pptx](docs/GeminiLiveHackathon.pptx)
 
