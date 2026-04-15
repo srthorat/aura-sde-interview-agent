@@ -1233,14 +1233,30 @@ def record_answer_note(question: str, strength: str, weakness: str, **kwargs) ->
 
 
 def _normalize_category_grade_entry(entry: dict[str, Any]) -> dict[str, str]:
-    """Normalize slightly malformed LLM tool payloads for category grades."""
+    """Normalize slightly malformed LLM tool payloads for category grades.
+
+    Gemini sometimes sends keys with control characters (e.g. ``\\x08grade'``)
+    or extra quotes (``'category'``).  Strip everything that is not a plain
+    ASCII letter so we can match ``category``, ``grade``, ``notes`` reliably.
+    """
+    import re
+
+    _KEY_RE = re.compile(r"[^a-z]")          # keep only lowercase letters
+    _TARGET_KEYS = ("category", "grade", "notes")
+
     normalized: dict[str, str] = {}
     for raw_key, raw_value in entry.items():
         if raw_value is None:
             continue
-        key = str(raw_key).strip().strip("\"'").lower()
-        if key in {"category", "grade", "notes"}:
+        key = _KEY_RE.sub("", str(raw_key).lower())
+        # Exact match first, then substring match for garbled prefixes
+        if key in _TARGET_KEYS:
             normalized[key] = str(raw_value).strip()
+        else:
+            for target in _TARGET_KEYS:
+                if target in key and target not in normalized:
+                    normalized[target] = str(raw_value).strip()
+                    break
 
     # Some model payloads misspell the grade key (for example with a locale
     # variant), but still include a valid grade token in values.
